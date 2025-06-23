@@ -1,7 +1,18 @@
-// lib/widgets/cubagem_secao_dialog.dart (VERSÃO CORRIGIDA)
+// lib/widgets/cubagem_secao_dialog.dart (VERSÃO CORRIGIDA COM SALVAR E PRÓXIMA)
 
 import 'package:flutter/material.dart';
 import '../models/cubagem_secao_model.dart';
+
+// NOVA CLASSE DE RESULTADO para o diálogo de seção
+class SecaoDialogResult {
+  final CubagemSecao secao;
+  final bool irParaProximaSecao;
+
+  SecaoDialogResult({
+    required this.secao,
+    this.irParaProximaSecao = false,
+  });
+}
 
 class CubagemSecaoDialog extends StatefulWidget {
   final CubagemSecao secaoParaEditar;
@@ -24,8 +35,6 @@ class _CubagemSecaoDialogState extends State<CubagemSecaoDialog> {
   @override
   void initState() {
     super.initState();
-    // ##### CORREÇÃO DOS AVISOS #####
-    // Acessa diretamente widget.secaoParaEditar, pois é garantido que não é nulo.
     _circunferenciaController = TextEditingController(text: widget.secaoParaEditar.circunferencia > 0 ? widget.secaoParaEditar.circunferencia.toString() : '');
     _casca1Controller = TextEditingController(text: widget.secaoParaEditar.casca1_mm > 0 ? widget.secaoParaEditar.casca1_mm.toString() : '');
     _casca2Controller = TextEditingController(text: widget.secaoParaEditar.casca2_mm > 0 ? widget.secaoParaEditar.casca2_mm.toString() : '');
@@ -39,7 +48,8 @@ class _CubagemSecaoDialogState extends State<CubagemSecaoDialog> {
     super.dispose();
   }
 
-  void _salvar() {
+  // Modificar _salvar para aceitar um parâmetro 'irParaProximaSecao'
+  void _salvar({required bool irParaProximaSecao}) {
     if (_formKey.currentState!.validate()) {
       final secaoAtualizada = CubagemSecao(
         id: widget.secaoParaEditar.id,
@@ -49,11 +59,11 @@ class _CubagemSecaoDialogState extends State<CubagemSecaoDialog> {
         casca1_mm: double.tryParse(_casca1Controller.text.replaceAll(',', '.')) ?? 0,
         casca2_mm: double.tryParse(_casca2Controller.text.replaceAll(',', '.')) ?? 0,
       );
-      Navigator.of(context).pop(secaoAtualizada);
+      // Retorna o novo SecaoDialogResult
+      Navigator.of(context).pop(SecaoDialogResult(secao: secaoAtualizada, irParaProximaSecao: irParaProximaSecao));
     }
   }
   
-  // Função para validar campos de forma segura
   String? _validadorObrigatorio(String? v) {
     if (v == null || v.trim().isEmpty) {
       return 'Obrigatório';
@@ -71,7 +81,6 @@ class _CubagemSecaoDialogState extends State<CubagemSecaoDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // ##### CORREÇÃO DOS AVISOS #####
               TextFormField(
                 controller: _circunferenciaController,
                 autofocus: true,
@@ -99,7 +108,14 @@ class _CubagemSecaoDialogState extends State<CubagemSecaoDialog> {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
-        FilledButton(onPressed: _salvar, child: const Text('Confirmar')),
+        // Botão "Confirmar" (apenas salva e fecha)
+        FilledButton(onPressed: () => _salvar(irParaProximaSecao: false), child: const Text('Confirmar')),
+        // NOVO Botão "Salvar e Próxima"
+        FilledButton(
+          onPressed: () => _salvar(irParaProximaSecao: true),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey), // Cor diferente para destacar
+          child: const Text('Salvar e Próxima'),
+        ),
       ],
     );
   }

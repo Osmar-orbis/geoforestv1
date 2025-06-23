@@ -1,10 +1,21 @@
-// lib/pages/cubagem_dados_page.dart (VERSÃO CORRIGIDA)
+// lib/pages/cubagem_dados_page.dart (VERSÃO ATUALIZADA PARA FLUXO CONTÍNUO DE SEÇÕES)
 
 import 'package:flutter/material.dart';
 import '../helpers/database_helper.dart';
 import '../models/cubagem_arvore_model.dart';
 import '../models/cubagem_secao_model.dart';
-import '../widgets/cubagem_secao_dialog.dart';
+import '../widgets/cubagem_secao_dialog.dart'; // Importar o novo SecaoDialogResult
+
+// A classe CubagemResult permanece a mesma, pois ela é para a página, não para o diálogo de seção.
+class CubagemResult {
+  final CubagemArvore arvore;
+  final bool irParaProxima;
+
+  CubagemResult({
+    required this.arvore,
+    this.irParaProxima = false,
+  });
+}
 
 class CubagemDadosPage extends StatefulWidget {
   final String metodo;
@@ -95,19 +106,35 @@ class _CubagemDadosPageState extends State<CubagemDadosPage> {
     });
   }
   
-  void _editarDiametrosSecao(int index) async {
-    final secaoEditada = await showDialog<CubagemSecao>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => CubagemSecaoDialog(
-        secaoParaEditar: _secoes[index],
-      ),
-    );
+  // Modificar _editarDiametrosSecao para lidar com o fluxo contínuo
+  void _editarDiametrosSecao(int startIndex) async {
+    int currentIndex = startIndex;
+    bool continuarEditando = true;
 
-    if (secaoEditada != null) {
-      setState(() {
-        _secoes[index] = secaoEditada;
-      });
+    while (continuarEditando && currentIndex < _secoes.length) {
+      final result = await showDialog<SecaoDialogResult>( // Agora espera SecaoDialogResult
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => CubagemSecaoDialog(
+          secaoParaEditar: _secoes[currentIndex],
+        ),
+      );
+
+      if (result != null) {
+        setState(() {
+          _secoes[currentIndex] = result.secao; // Atualiza a seção com os dados salvos
+        });
+        // Se o usuário clicou em "Salvar e Próxima", avança para a próxima seção
+        if (result.irParaProximaSecao) {
+          currentIndex++;
+        } else {
+          // Se clicou em "Confirmar" (ou "Salvar"), para o loop
+          continuarEditando = false;
+        }
+      } else {
+        // Se o usuário cancelou o diálogo, para o loop
+        continuarEditando = false;
+      }
     }
   }
   
@@ -120,7 +147,9 @@ class _CubagemDadosPageState extends State<CubagemDadosPage> {
     });
   }
 
-  void _salvarCubagem() async {
+  // Método _salvarCubagem permanece como estava, pois o fluxo "Salvar e Próxima" da árvore
+  // é na página, não no diálogo de seção.
+  void _salvarCubagem({required bool irParaProxima}) async {
     if (_formKey.currentState!.validate()) {
       if (_secoes.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -138,12 +167,11 @@ class _CubagemDadosPageState extends State<CubagemDadosPage> {
       
       setState(() => _isLoading = true);
 
-      // ##### CORREÇÃO DOS AVISOS #####
       final alturaTotal = double.parse(_alturaTotalController.text.replaceAll(',', '.'));
       final valorCAP = double.parse(_valorCAPController.text.replaceAll(',', '.'));
       final alturaBase = double.parse(_alturaBaseController.text.replaceAll(',', '.'));
 
-      final arvore = CubagemArvore(
+      final arvoreToSave = CubagemArvore(
         id: widget.arvoreParaEditar?.id,
         identificador: _identificadorController.text,
         alturaTotal: alturaTotal,
@@ -154,12 +182,13 @@ class _CubagemDadosPageState extends State<CubagemDadosPage> {
       );
       
       try {
-        await dbHelper.salvarCubagemCompleta(arvore, _secoes);
+        await dbHelper.salvarCubagemCompleta(arvoreToSave, _secoes);
+        
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Cubagem salva com sucesso!'), backgroundColor: Colors.green),
         );
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(CubagemResult(arvore: arvoreToSave, irParaProxima: irParaProxima));
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -173,7 +202,6 @@ class _CubagemDadosPageState extends State<CubagemDadosPage> {
     }
   }
 
-  // Função para validar campos de forma segura
   String? _validadorObrigatorio(String? v) {
     if (v == null || v.trim().isEmpty) {
       return 'Campo obrigatório';
@@ -189,12 +217,19 @@ class _CubagemDadosPageState extends State<CubagemDadosPage> {
         actions: [
           if (_isLoading)
             const Padding(padding: EdgeInsets.all(16.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white)))
-          else
+          else ...[
             IconButton(
               icon: const Icon(Icons.save),
               tooltip: 'Salvar Cubagem',
-              onPressed: _salvarCubagem,
+              onPressed: () => _salvarCubagem(irParaProxima: false),
             ),
+            if (widget.arvoreParaEditar == null)
+              IconButton(
+                icon: const Icon(Icons.save_alt),
+                tooltip: 'Salvar e Adicionar Próxima Árvore',
+                onPressed: () => _salvarCubagem(irParaProxima: true),
+              ),
+          ]
         ],
       ),
       body: Form(
@@ -207,7 +242,6 @@ class _CubagemDadosPageState extends State<CubagemDadosPage> {
               Text('Dados da Árvore', style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 8),
 
-              // ##### CORREÇÃO DOS AVISOS #####
               TextFormField(controller: _identificadorController, decoration: const InputDecoration(labelText: 'Identificador da Árvore', border: OutlineInputBorder()), validator: _validadorObrigatorio),
               const SizedBox(height: 16),
               TextFormField(controller: _alturaTotalController, decoration: const InputDecoration(labelText: 'Altura Total (m)', border: OutlineInputBorder()), keyboardType: const TextInputType.numberWithOptions(decimal: true), validator: _validadorObrigatorio),
@@ -277,7 +311,7 @@ class _CubagemDadosPageState extends State<CubagemDadosPage> {
                             title: Text('Medir em ${secao.alturaMedicao.toStringAsFixed(2)} m de altura'),
                             subtitle: Text('Dsc: ${secao.diametroSemCasca.toStringAsFixed(2)} cm'),
                             trailing: const Icon(Icons.edit_note, color: Colors.blueAccent),
-                            onTap: () => _editarDiametrosSecao(index),
+                            onTap: () => _editarDiametrosSecao(index), // Passa o índice para iniciar a edição
                           ),
                         );
                       },
