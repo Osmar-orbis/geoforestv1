@@ -1,4 +1,4 @@
-// lib/pages/inventario_page.dart (VERSÃO COMPLETA E FUNCIONAL RESTAURADA)
+// lib/pages/inventario_page.dart (VERSÃO ATUALIZADA COM FLUXO CONTÍNUO)
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/helpers/database_helper.dart';
@@ -15,12 +15,11 @@ class InventarioPage extends StatefulWidget {
 }
 
 class _InventarioPageState extends State<InventarioPage> {
-  final List<Arvore> _arvoresColetadas = [];
+  List<Arvore> _arvoresColetadas = [];
   bool _isLoading = true;
   bool _isSaving = false;
   bool _mostrandoApenasDominantes = false;
 
-  // Variáveis de estado para controlar a próxima inserção
   int _linhaAtual = 1;
   int _posicaoNaLinhaAtual = 1;
 
@@ -30,15 +29,13 @@ class _InventarioPageState extends State<InventarioPage> {
     _carregarDadosIniciais();
   }
 
-  // Carrega os dados existentes da parcela e calcula a próxima posição
   Future<void> _carregarDadosIniciais() async {
     setState(() => _isLoading = true);
     if (widget.parcela.dbId != null) {
       final arvoresDoBanco = await DatabaseHelper().getArvoresDaParcela(widget.parcela.dbId!);
       if (mounted) {
         setState(() {
-          _arvoresColetadas.clear();
-          _arvoresColetadas.addAll(arvoresDoBanco);
+          _arvoresColetadas = arvoresDoBanco;
         });
       }
     }
@@ -48,37 +45,23 @@ class _InventarioPageState extends State<InventarioPage> {
     }
   }
 
-  // Lógica para determinar a próxima linha e posição vazia
   void _atualizarContadoresLinhaPosicao() {
     if (_arvoresColetadas.isEmpty) {
       _linhaAtual = 1;
       _posicaoNaLinhaAtual = 1;
       return;
     }
-    int maxLinha = 0;
-    for (var a in _arvoresColetadas) {
-      if (a.linha > maxLinha) {
-        maxLinha = a.linha;
-      }
-    }
-
+    int maxLinha = _arvoresColetadas.map((a) => a.linha).reduce((a, b) => a > b ? a : b);
     final arvoresNaMaxLinha = _arvoresColetadas.where((a) => a.linha == maxLinha).toList();
     if (arvoresNaMaxLinha.isEmpty) {
       _linhaAtual = maxLinha + 1;
       _posicaoNaLinhaAtual = 1;
       return;
     }
-
-    int maxPosicaoNaMaxLinha = 0;
-    for (var a in arvoresNaMaxLinha) {
-      if (a.posicaoNaLinha > maxPosicaoNaMaxLinha) {
-        maxPosicaoNaMaxLinha = a.posicaoNaLinha;
-      }
-    }
-
+    int maxPosicaoNaMaxLinha = arvoresNaMaxLinha.map((a) => a.posicaoNaLinha).reduce((a, b) => a > b ? a : b);
     final ultimaArvore = _arvoresColetadas.lastWhere(
       (a) => a.linha == maxLinha && a.posicaoNaLinha == maxPosicaoNaMaxLinha,
-      orElse: () => _arvoresColetadas.last, // Fallback seguro
+      orElse: () => _arvoresColetadas.last,
     );
 
     if (ultimaArvore.fimDeLinha) {
@@ -90,110 +73,119 @@ class _InventarioPageState extends State<InventarioPage> {
     }
   }
 
-  // Função para ADICIONAR uma nova árvore (chamada pelo botão '+')
+  // =============================================================
+  // ========= NOVA LÓGICA DE ADIÇÃO COM FLUXO CONTÍNUO ===========
+  // =============================================================
   Future<void> _abrirFormularioParaAdicionar() async {
-    bool continuarNaMesmaPosicao;
-    do {
-      continuarNaMesmaPosicao = false;
-      final result = await showDialog<DialogResult>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => ArvoreDialog(
-          linhaAtual: _linhaAtual,
-          posicaoNaLinhaAtual: _posicaoNaLinhaAtual,
-        ),
-      );
+    bool continuarAdicionando = true; // Começa o loop
 
-      if (result != null) {
+    while (continuarAdicionando) {
+      // Garante que os contadores estão sempre atualizados antes de abrir o diálogo
+      _atualizarContadoresLinhaPosicao(); 
+      
+      bool continuarNaMesmaPosicaoFuste = false; // Renomeado para clareza
+      bool primeiroFuste = true;
+
+      do {
+        continuarNaMesmaPosicaoFuste = false; // Reseta para cada fuste
+        
+        final result = await showDialog<DialogResult>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => ArvoreDialog(
+            linhaAtual: _linhaAtual,
+            posicaoNaLinhaAtual: _posicaoNaLinhaAtual,
+            isAdicionandoFuste: !primeiroFuste,
+          ),
+        );
+
+        if (result == null) {
+          // Se o usuário cancelou (pressionou 'Cancelar' ou fora do diálogo), quebra os dois loops
+          continuarAdicionando = false;
+          break; 
+        }
+
+        // Se chegou aqui, o usuário salvou
         setState(() => _arvoresColetadas.add(result.arvore));
         await _salvarEstadoAtual(showSnackbar: false);
-        continuarNaMesmaPosicao = result.continuarNaMesmaPosicao;
-        if (!continuarNaMesmaPosicao) {
-          setState(_atualizarContadoresLinhaPosicao);
+        
+        continuarNaMesmaPosicaoFuste = result.continuarNaMesmaPosicao;
+        if (continuarNaMesmaPosicaoFuste) {
+          primeiroFuste = false;
         }
-      } else {
-        break;
-      }
-    } while (continuarNaMesmaPosicao);
+
+        // Verifica se o usuário quer ir para a próxima árvore
+        // Se não for para a próxima posição E não for adicionar outro fuste, então para o loop principal
+        if (!result.irParaProxima && !continuarNaMesmaPosicaoFuste) {
+          continuarAdicionando = false; // Quebra o loop principal
+        }
+        
+      } while (continuarNaMesmaPosicaoFuste);
+    }
+    
+    // Atualiza a UI uma última vez após o fim do loop
+    setState(_atualizarContadoresLinhaPosicao);
   }
   
-  // Função para EDITAR uma árvore existente (chamada ao tocar em um item da lista)
   Future<void> _abrirFormularioParaEditar(Arvore arvore) async {
     final result = await showDialog<DialogResult>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => ArvoreDialog(
-        arvoreParaEditar: arvore,
-        linhaAtual: arvore.linha,
-        posicaoNaLinhaAtual: arvore.posicaoNaLinha,
-      ),
+      builder: (context) => ArvoreDialog(arvoreParaEditar: arvore, linhaAtual: arvore.linha, posicaoNaLinhaAtual: arvore.posicaoNaLinha),
     );
 
     if (result != null) {
       final index = _arvoresColetadas.indexWhere((a) => a.id == result.arvore.id);
       if (index != -1) {
-        setState(() => _arvoresColetadas[index] = result.arvore);
+        setState(() {
+          _arvoresColetadas[index] = result.arvore;
+          _arvoresColetadas.sort((a, b) {
+            int compLinha = a.linha.compareTo(b.linha);
+            if (compLinha != 0) return compLinha;
+            return a.posicaoNaLinha.compareTo(b.posicaoNaLinha);
+          });
+        });
         await _salvarEstadoAtual();
         setState(_atualizarContadoresLinhaPosicao);
       }
     }
   }
 
-  // Função para salvar a coleta completa no banco de dados
   Future<void> _salvarEstadoAtual({bool showSnackbar = true, bool concluir = false}) async {
     if (_isSaving) return;
     setState(() => _isSaving = true);
-
     try {
       if (concluir) {
         widget.parcela.status = StatusParcela.concluida;
         _identificarArvoresDominantes();
       }
       await DatabaseHelper().saveFullColeta(widget.parcela, _arvoresColetadas);
-      
       if (mounted && showSnackbar) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Progresso salvo com sucesso!'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Progresso salvo!'), duration: Duration(seconds: 2), backgroundColor: Colors.green));
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
     } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  // Lógica para o botão de concluir
   Future<void> _concluirColeta() async {
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Concluir Coleta'),
-          content: const Text('Tem certeza que deseja marcar esta parcela como concluída?'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Concluir')),
-          ],
-        ),
-      ) ?? false;
+    final confirm = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      title: const Text('Concluir Coleta'),
+      content: const Text('Tem certeza que deseja marcar esta parcela como concluída?'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+        ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Concluir')),
+      ],
+    )) ?? false;
       
-      if (confirm) {
-        await _salvarEstadoAtual(concluir: true);
-        if (mounted) {
-            Navigator.of(context).pop(true);
-        }
-      }
+    if (confirm) {
+      await _salvarEstadoAtual(concluir: true);
+      if (mounted) Navigator.of(context).pop(true);
+    }
   }
 
-  // Identifica árvores dominantes
   void _identificarArvoresDominantes() {
     for (var arvore in _arvoresColetadas) {
       arvore.dominante = false;
@@ -211,10 +203,9 @@ class _InventarioPageState extends State<InventarioPage> {
         arvoresCandidatas[i].dominante = true;
       }
     }
-    _arvoresColetadas.sort((a, b) => a.id.compareTo(b.id));
+    // Não precisa reordenar por ID aqui, pode causar inconsistência visual
   }
 
-  // Cria o subtítulo para cada item da lista
   String _getArvoreSubtitle(Arvore arvore) {
     String statusPrincipal = arvore.status.name[0].toUpperCase() + arvore.status.name.substring(1);
     String statusSecundario = arvore.status2 != null ? ' / ${arvore.status2!.name[0].toUpperCase() + arvore.status2!.name.substring(1)}' : '';
@@ -233,21 +224,10 @@ class _InventarioPageState extends State<InventarioPage> {
         title: const Text('Coleta da Parcela'),
         actions: [
           if (_isSaving)
-            const Padding(
-              padding: EdgeInsets.only(right: 16.0),
-              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white))),
-            )
+            const Padding(padding: EdgeInsets.only(right: 16.0), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white))))
           else ...[
-            IconButton(
-              icon: const Icon(Icons.save_outlined),
-              tooltip: 'Salvar Progresso',
-              onPressed: () => _salvarEstadoAtual(),
-            ),
-            IconButton(
-              icon: const Icon(Icons.check_circle_outline),
-              tooltip: 'Concluir e Salvar Parcela',
-              onPressed: _concluirColeta,
-            ),
+            IconButton(icon: const Icon(Icons.save_outlined), tooltip: 'Salvar Progresso', onPressed: () => _salvarEstadoAtual()),
+            IconButton(icon: const Icon(Icons.check_circle_outline), tooltip: 'Concluir e Salvar Parcela', onPressed: _concluirColeta),
           ]
         ],
       ),
@@ -255,45 +235,30 @@ class _InventarioPageState extends State<InventarioPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                Padding(padding: const EdgeInsets.all(8.0), child: Card(elevation: 2, child: ListTile(
+                  leading: Icon(Icons.info_outline, color: Theme.of(context).primaryColor),
+                  title: Text('Talhão: ${widget.parcela.nomeTalhao} / Parcela: ${widget.parcela.idParcela}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('Árvores Coletadas: ${_arvoresColetadas.length}'),
+                ))),
+
                 Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Card(
-                    elevation: 2,
-                    child: ListTile(
-                      leading: Icon(Icons.info_outline, color: Theme.of(context).primaryColor),
-                      title: Text(
-                        'Talhão: ${widget.parcela.nomeTalhao} / Parcela: ${widget.parcela.idParcela}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text('Árvores Coletadas: ${_arvoresColetadas.length}'),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        if (!_mostrandoApenasDominantes) {
-                          _identificarArvoresDominantes();
-                        }
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => setState(() {
+                        if (!_mostrandoApenasDominantes) _identificarArvoresDominantes();
                         _mostrandoApenasDominantes = !_mostrandoApenasDominantes;
-                      });
-                    },
-                    icon: Icon(_mostrandoApenasDominantes ? Icons.filter_list_off : Icons.filter_list),
-                    label: Text(_mostrandoApenasDominantes ? 'Mostrar Todas' : 'Encontrar Dominantes'),
-                    style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
+                      }),
+                      icon: Icon(_mostrandoApenasDominantes ? Icons.filter_list_off : Icons.filter_list),
+                      label: Text(_mostrandoApenasDominantes ? 'Mostrar Todas' : 'Encontrar Dominantes'),
+                    ),
                   ),
                 ),
                 const Divider(height: 16),
                 Expanded(
                   child: _arvoresColetadas.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'Clique no botão "+" para adicionar a primeira árvore.',
-                            style: TextStyle(color: Colors.grey, fontSize: 16),
-                          ),
-                        )
+                      ? const Center(child: Text('Clique no botão "+" para adicionar a primeira árvore.', style: TextStyle(color: Colors.grey, fontSize: 16)))
                       : ListView.builder(
                           itemCount: listaExibida.length,
                           itemBuilder: (context, index) {
@@ -304,9 +269,7 @@ class _InventarioPageState extends State<InventarioPage> {
                               child: ListTile(
                                 leading: CircleAvatar(
                                   backgroundColor: arvore.dominante ? Colors.amber[700] : Theme.of(context).primaryColor,
-                                  child: arvore.dominante 
-                                    ? const Icon(Icons.star, color: Colors.white, size: 20)
-                                    : Text('${arvore.posicaoNaLinha}'),
+                                  child: arvore.dominante ? const Icon(Icons.star, color: Colors.white, size: 20) : Text('${arvore.posicaoNaLinha}', style: const TextStyle(color: Colors.white)),
                                 ),
                                 title: Text('L: ${arvore.linha} | CAP: ${arvore.cap.toStringAsFixed(1)} cm'),
                                 subtitle: Text(_getArvoreSubtitle(arvore)),
@@ -319,7 +282,6 @@ class _InventarioPageState extends State<InventarioPage> {
                 ),
               ],
             ),
-      // Botão para adicionar novas árvores
       floatingActionButton: FloatingActionButton(
         onPressed: _abrirFormularioParaAdicionar,
         tooltip: 'Adicionar Árvore',
