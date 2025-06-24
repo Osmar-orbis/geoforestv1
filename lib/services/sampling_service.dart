@@ -1,98 +1,66 @@
-// lib/services/sampling_service.dart (VERSÃO FINAL, SEM NOVAS DEPENDÊNCIAS)
+// lib/services/sampling_service.dart
 
 import 'dart:math';
-import 'package:flutter/foundation.dart';
+// import 'package:flutter/foundation.dart'; // <<< 1. IMPORT REMOVIDO
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geoforestcoletor/models/sample_point.dart'; // <<< IMPORT DO NOVO MODELO
 
 class SamplingService {
-  List<LatLng> generateSamplePoints({
-    required Polygon polygon,
+  
+  // <<< O TIPO DE RETORNO MUDOU PARA List<SamplePoint> >>>
+  List<SamplePoint> generateGridSamplePoints({
+    required List<Polygon> polygons,
     required double hectaresPerSample,
   }) {
-    if (hectaresPerSample <= 0 || polygon.points.isEmpty) return [];
+    if (hectaresPerSample <= 0 || polygons.isEmpty) return [];
 
-    // 1. CALCULAR A ÁREA DO POLÍGONO
-    // Usamos o algoritmo "Surveyor's formula" para calcular a área em um plano 2D.
-    // Para áreas pequenas/médias, a distorção é aceitável.
-    final areaInSqMeters = _calculatePolygonArea(polygon.points);
-    final areaInHectares = areaInSqMeters / 10000;
-
-    // 2. CALCULAR O NÚMERO DE PONTOS
-    final int numberOfPoints = (areaInHectares / hectaresPerSample).floor();
-    if (numberOfPoints <= 0) return [];
-
-    // 3. ENCONTRAR O BOUNDING BOX
-    num minLat = 90.0, maxLat = -90.0, minLon = 180.0, maxLon = -180.0;
-    for (final point in polygon.points) {
-      minLat = min(minLat, point.latitude);
-      maxLat = max(maxLat, point.latitude);
-      minLon = min(minLon, point.longitude);
-      maxLon = max(maxLon, point.longitude);
-    }
-
-    final List<LatLng> validSamplePoints = [];
-    final Random random = Random();
-    int attempts = 0;
-    final int maxAttempts = numberOfPoints * 200; // Aumentamos um pouco as tentativas
-
-    // 4. GERAR PONTOS E TESTAR
-    while (validSamplePoints.length < numberOfPoints && attempts < maxAttempts) {
-      final randLat = minLat + random.nextDouble() * (maxLat - minLat);
-      final randLon = minLon + random.nextDouble() * (maxLon - minLon);
-      final randomPoint = LatLng(randLat, randLon);
-
-      // 5. VERIFICAR SE O PONTO ESTÁ DENTRO DO POLÍGONO
-      // Usamos o algoritmo "Ray-casting" para a verificação.
-      if (_isPointInPolygon(randomPoint, polygon.points)) {
-        validSamplePoints.add(randomPoint);
-      }
-      attempts++;
-    }
-
-    if (validSamplePoints.length < numberOfPoints) {
-      debugPrint("Aviso: Gerados ${validSamplePoints.length} de $numberOfPoints pontos.");
-    }
+    final allPoints = polygons.expand((p) => p.points).toList();
+    if (allPoints.isEmpty) return [];
     
+    final bounds = LatLngBounds.fromPoints(allPoints);
+    final double minLat = bounds.south;
+    final double maxLat = bounds.north;
+    final double minLon = bounds.west;
+    final double maxLon = bounds.east;
+
+    final double centerLatRad = ((minLat + maxLat) / 2) * (pi / 180.0);
+    
+    final double spacingInMeters = sqrt(hectaresPerSample * 10000);
+    final double latStep = spacingInMeters / 111132.0;
+    final double lonStep = spacingInMeters / (111320.0 * cos(centerLatRad));
+
+    final List<SamplePoint> validSamplePoints = [];
+    int pointId = 1; // <<< Contador para o número da parcela
+
+    for (double lat = minLat; lat <= maxLat; lat += latStep) {
+      for (double lon = minLon; lon <= maxLon; lon += lonStep) {
+        final gridPoint = LatLng(lat, lon);
+        
+        for (final polygon in polygons) {
+          if (_isPointInPolygon(gridPoint, polygon.points)) {
+            // <<< CRIA O OBJETO SamplePoint E ADICIONA NA LISTA >>>
+            validSamplePoints.add(SamplePoint(id: pointId, position: gridPoint));
+            pointId++; // Incrementa o contador
+            break; 
+          }
+        }
+      }
+    }
+
     return validSamplePoints;
   }
 
-  // --- ALGORITMOS MATEMÁTICOS IMPLEMENTADOS MANUALMENTE ---
-
-  /// Calcula a área de um polígono usando a fórmula de Shoelace/Surveyor.
-  /// Assume um plano cartesiano, o que é uma aproximação.
-  /// Converte graus para metros para uma estimativa da área.
-  double _calculatePolygonArea(List<LatLng> points) {
-    if (points.length < 3) return 0.0;
-
-    double area = 0.0;
-    // Conversão aproximada de graus para metros no equador
-    const double degToMet = 111320.0; 
-
-    for (int i = 0; i < points.length; i++) {
-      LatLng p1 = points[i];
-      LatLng p2 = points[(i + 1) % points.length]; // Próximo ponto, voltando ao início no final
-
-      // Converte coordenadas para um sistema de metros aproximado
-      double p1x = p1.longitude * degToMet * cos(p1.latitude * pi / 180);
-      double p1y = p1.latitude * degToMet;
-      double p2x = p2.longitude * degToMet * cos(p2.latitude * pi / 180);
-      double p2y = p2.latitude * degToMet;
-
-      area += (p1x * p2y - p2x * p1y);
-    }
-
-    return (area.abs() / 2.0);
-  }
-
   /// Verifica se um ponto está dentro de um polígono usando o algoritmo Ray-casting.
-  bool _isPointInPolygon(LatLng point, List<LatLng> polygon) {
+  bool _isPointInPolygon(LatLng point, List<LatLng> polygonVertices) {
+    if (polygonVertices.isEmpty) return false;
+    
     int intersections = 0;
-    for (int i = 0; i < polygon.length; i++) {
-      LatLng p1 = polygon[i];
-      LatLng p2 = polygon[(i + 1) % polygon.length];
+    for (int i = 0; i < polygonVertices.length; i++) {
+      LatLng p1 = polygonVertices[i];
+      LatLng p2 = polygonVertices[(i + 1) % polygonVertices.length];
 
-      if (p1.latitude > point.latitude != p2.latitude > point.latitude) {
+      if ((p1.latitude > point.latitude) != (p2.latitude > point.latitude)) {
         double atX = (p2.longitude - p1.longitude) * (point.latitude - p1.latitude) / (p2.latitude - p1.latitude) + p1.longitude;
         if (point.longitude < atX) {
           intersections++;

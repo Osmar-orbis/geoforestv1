@@ -1,4 +1,4 @@
-// lib/pages/coleta_dados_page.dart (VERSÃO COMPLETA E REVISADA)
+// lib/pages/coleta_dados_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -10,8 +10,21 @@ import 'package:geoforestcoletor/helpers/database_helper.dart';
 enum FormaParcela { retangular, circular }
 
 class ColetaDadosPage extends StatefulWidget {
+  // Parâmetros para quando a tela é chamada para edição
   final Parcela? parcelaParaEditar;
-  const ColetaDadosPage({super.key, this.parcelaParaEditar});
+  
+  // Parâmetros para quando a tela é chamada a partir do mapa de amostragem
+  final String? nomeFazendaInicial;
+  final String? nomeTalhaoInicial;
+  final int? idParcelaInicial;
+  
+  const ColetaDadosPage({
+    super.key, 
+    this.parcelaParaEditar,
+    this.nomeFazendaInicial,
+    this.nomeTalhaoInicial,
+    this.idParcelaInicial,
+  });
 
   @override
   State<ColetaDadosPage> createState() => _ColetaDadosPageState();
@@ -38,6 +51,7 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
   @override
   void initState() {
     super.initState();
+    // Prioriza os dados de edição, depois os dados do mapa, depois vazio.
     if (widget.parcelaParaEditar != null) {
       final p = widget.parcelaParaEditar!;
       _nomeFazendaController.text = p.nomeFazenda;
@@ -49,7 +63,13 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
       if (p.latitude != null && p.longitude != null) {
         _posicaoAtual = Position(latitude: p.latitude!, longitude: p.longitude!, timestamp: DateTime.now(), accuracy: 0.0, altitude: 0.0, altitudeAccuracy: 0.0, heading: 0.0, headingAccuracy: 0.0, speed: 0.0, speedAccuracy: 0.0);
       }
+    } else {
+      // Pré-preenche com dados do mapa, se existirem
+      _nomeFazendaController.text = widget.nomeFazendaInicial ?? '';
+      _talhaoParcelaController.text = widget.nomeTalhaoInicial ?? '';
+      _idParcelaController.text = widget.idParcelaInicial?.toString() ?? '';
     }
+
     _larguraController.addListener(_calcularArea);
     _comprimentoController.addListener(_calcularArea);
     _raioController.addListener(_calcularArea);
@@ -83,7 +103,6 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
 
   Future<void> _salvarDados() async {
     if (!_formKey.currentState!.validate()) return;
-    // No modo edição, a área pode já existir, então não validamos se for 0.
     if (_areaCalculada <= 0 && widget.parcelaParaEditar == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A área da parcela deve ser maior que zero'), backgroundColor: Colors.orange));
       return;
@@ -92,7 +111,6 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
     try {
       final dbHelper = DatabaseHelper();
       if (widget.parcelaParaEditar == null) {
-        // --- MODO CRIAÇÃO ---
         final novaParcela = Parcela(
           nomeFazenda: _nomeFazendaController.text.trim(),
           nomeTalhao: _talhaoParcelaController.text.trim(),
@@ -108,7 +126,6 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
         final parcelaSalva = await dbHelper.saveFullColeta(novaParcela, []);
         if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => InventarioPage(parcela: parcelaSalva)));
       } else {
-        // --- MODO EDIÇÃO ---
         final parcelaEditada = Parcela(
           dbId: widget.parcelaParaEditar!.dbId,
           nomeFazenda: _nomeFazendaController.text.trim(),
@@ -154,7 +171,6 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
       if (mounted) setState(() => _buscandoLocalizacao = false);
     }
   }
-
 
   @override
   Widget build(BuildContext context) {

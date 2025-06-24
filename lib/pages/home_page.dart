@@ -1,4 +1,4 @@
-// lib/pages/home_page.dart (VERSÃO FINAL E CORRIGIDA)
+// lib/pages/home_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/helpers/database_helper.dart';
@@ -7,31 +7,18 @@ import 'package:geoforestcoletor/pages/configuracoes_page.dart';
 import 'package:geoforestcoletor/pages/lista_coletas_page.dart';
 import 'package:geoforestcoletor/pages/sobre_page.dart';
 import 'package:geoforestcoletor/widgets/menu_card.dart';
-import 'package:url_launcher/url_launcher.dart';
+// Removi o import do url_launcher, pois a função que o usava foi substituída.
+// import 'package:url_launcher/url_launcher.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key, required this.title});
   final String title;
 
-  // Função para abrir o Google Maps
-  void _abrirNavegacao(BuildContext context) async {
-    final uri = Uri.parse('https://www.google.com/maps');
-    
-    if (!context.mounted) return;
-
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível abrir o mapa.')),
-      );
-    }
-  }
+  // A função _abrirNavegacao não é mais necessária, mas pode ser mantida se quiser.
+  // void _abrirNavegacao(BuildContext context) async { ... }
   
-  // <<< NOVO MÉTODO ADICIONADO AQUI
-  // Exibe um diálogo para o usuário escolher o que exportar.
   void _mostrarDialogoExportacao(BuildContext context) {
-    final dbHelper = DatabaseHelper(); // Instancia o helper do banco de dados
+    final dbHelper = DatabaseHelper();
 
     showDialog(
       context: context,
@@ -42,15 +29,15 @@ class HomePage extends StatelessWidget {
           TextButton(
             child: const Text('Coletas de Parcela'),
             onPressed: () {
-              Navigator.of(ctx).pop(); // Fecha o diálogo
-              dbHelper.exportarDados(context); // Chama a função de exportar coletas
+              Navigator.of(ctx).pop();
+              dbHelper.exportarDados(context);
             },
           ),
           TextButton(
             child: const Text('Cubagens Rigorosas'),
             onPressed: () {
-              Navigator.of(ctx).pop(); // Fecha o diálogo
-              dbHelper.exportarCubagens(context); // Chama a função de exportar cubagens
+              Navigator.of(ctx).pop();
+              dbHelper.exportarCubagens(context);
             },
           ),
         ],
@@ -70,21 +57,26 @@ class HomePage extends StatelessWidget {
           mainAxisSpacing: 12.0,
           childAspectRatio: 1.0,
           children: [
-            MenuCard(icon: Icons.explore_outlined, label: 'Navegação', onTap: () => _abrirNavegacao(context)),
+            
+            // =============================================================
+            // =================== ALTERAÇÃO FEITA AQUI ====================
+            // =============================================================
+            // O antigo card "Navegação" foi substituído por este:
+            MenuCard(
+              icon: Icons.explore_outlined, // Um ícone mais adequado
+              label: 'Navegação', 
+              onTap: () => Navigator.pushNamed(context, '/map_import'), // Navega para a nova rota
+            ),
+            // =============================================================
+
+            // O resto dos seus cards permanece exatamente igual
             MenuCard(icon: Icons.add_location_alt_outlined, label: 'Nova Coleta', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ColetaDadosPage()))),
             MenuCard(icon: Icons.checklist_rtl_outlined, label: 'Painel de Coletas', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ListaColetasPage(title: 'Painel de Coletas')))),
-            
-            // <<< CARD ATUALIZADO AQUI
-            // O card "Exportar Coletas" foi substituído por este.
             MenuCard(
-              icon: Icons.upload_file_outlined, // Ícone unificado para exportação
+              icon: Icons.upload_file_outlined,
               label: 'Exportar Dados',
-              onTap: () => _mostrarDialogoExportacao(context), // Chama o novo diálogo
+              onTap: () => _mostrarDialogoExportacao(context),
             ),
-                        
-            // Card para importar mapa (se existir a rota)
-            // MenuCard(icon: Icons.map_outlined, label: 'Importar Mapa', onTap: () => Navigator.pushNamed(context, '/map_import')),
-            
             MenuCard(icon: Icons.settings_outlined, label: 'Configurações', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ConfiguracoesPage()))),
             MenuCard(icon: Icons.info_outline, label: 'Sobre', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SobrePage()))),
           ],
