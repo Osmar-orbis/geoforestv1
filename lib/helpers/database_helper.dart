@@ -1,17 +1,17 @@
-// lib/helpers/database_helper.dart (VERSÃO COMPLETA E FINAL - SEM ERROS)
+// lib/helpers/database_helper.dart (VERSÃO COMPLETA E FINAL - COM CORREÇÕES)
 
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:path/path.dart'; // Import necessário para a função 'join'
+import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:geoforestcoletor/models/parcela_model.dart';
 import 'package:geoforestcoletor/models/arvore_model.dart';
 import 'package:geoforestcoletor/models/cubagem_arvore_model.dart';
-import 'package:geoforestcoletor/models/cubagem_secao_model.dart'; 
+import 'package:geoforestcoletor/models/cubagem_secao_model.dart';
 import 'package:proj4dart/proj4dart.dart' as proj4;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -38,6 +38,7 @@ class DatabaseHelper {
   Future<Database> get database async => _database ??= await _initDatabase();
 
   Future<Database> _initDatabase() async {
+    proj4.Projection.add('EPSG:4326', '+proj=longlat +datum=WGS84 +no_defs');
     proj4Definitions.forEach((epsg, def) {
       proj4.Projection.add('EPSG:$epsg', def);
     });
@@ -72,7 +73,7 @@ class DatabaseHelper {
       await db.execute('''CREATE TABLE cubagens_arvores(id INTEGER PRIMARY KEY AUTOINCREMENT, identificador TEXT NOT NULL, alturaTotal REAL NOT NULL, tipoMedidaCAP TEXT NOT NULL, valorCAP REAL NOT NULL, alturaBase REAL NOT NULL, classe TEXT)''');
     }
     if (oldVersion < 8) {
-      await db.execute('DROP TABLE IF EXISTS cubagens_secoes'); 
+      await db.execute('DROP TABLE IF EXISTS cubagens_secoes');
       await db.execute('''CREATE TABLE cubagens_secoes(id INTEGER PRIMARY KEY AUTOINCREMENT, cubagemArvoreId INTEGER NOT NULL, alturaMedicao REAL NOT NULL, circunferencia REAL, casca1_mm REAL, casca2_mm REAL, FOREIGN KEY (cubagemArvoreId) REFERENCES cubagens_arvores (id) ON DELETE CASCADE)''');
     }
   }
@@ -103,19 +104,19 @@ class DatabaseHelper {
     });
     return parcela;
   }
-  
+
   Future<List<Arvore>> getArvoresDaParcela(int parcelaId) async {
     final db = await database;
     final List<Map<String, dynamic>> arvoresMaps = await db.query('arvores', where: 'parcelaId = ?', whereArgs: [parcelaId], orderBy: 'linha, posicaoNaLinha, id');
     return List.generate(arvoresMaps.length, (i) => Arvore.fromMap(arvoresMaps[i]));
   }
-  
+
   Future<List<Parcela>> getTodasParcelas() async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query('parcelas', orderBy: 'dataColeta DESC');
     return List.generate(maps.length, (i) => Parcela.fromMap(maps[i]));
   }
-  
+
   Future<int> deleteParcela(int id) async {
     final db = await database;
     return await db.delete('parcelas', where: 'id = ?', whereArgs: [id]);
@@ -217,12 +218,152 @@ class DatabaseHelper {
   }
 
   // --- MÉTODOS DE CUBAGEM ---
-  Future<void> salvarCubagemCompleta(CubagemArvore arvore, List<CubagemSecao> secoes) async { /* ... */ }
-  Future<List<CubagemArvore>> getTodasCubagens() async { /* ... */ return []; }
-  Future<List<CubagemSecao>> getSecoesPorArvoreId(int arvoreId) async { /* ... */ return []; }
-  Future<void> deletarCubagem(int id) async { /* ... */ }
-  Future<void> exportarCubagens(BuildContext context) async { /* ... */ }
-  Future<void> exportarUmaCubagem(BuildContext context, int arvoreId) async { /* ... */ }
+  Future<void> salvarCubagemCompleta(CubagemArvore arvore, List<CubagemSecao> secoes) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      int arvoreId;
+      if (arvore.id == null) {
+        arvoreId = await txn.insert('cubagens_arvores', arvore.toMap());
+        arvore.id = arvoreId;
+      } else {
+        arvoreId = arvore.id!;
+        await txn.update('cubagens_arvores', arvore.toMap(), where: 'id = ?', whereArgs: [arvoreId]);
+      }
+      await txn.delete('cubagens_secoes', where: 'cubagemArvoreId = ?', whereArgs: [arvoreId]);
+      for (var secao in secoes) {
+        secao.cubagemArvoreId = arvoreId;
+        await txn.insert('cubagens_secoes', secao.toMap());
+      }
+    });
+  }
+
+  Future<List<CubagemArvore>> getTodasCubagens() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('cubagens_arvores', orderBy: 'id DESC');
+    return List.generate(maps.length, (i) => CubagemArvore.fromMap(maps[i]));
+  }
+
+  Future<List<CubagemSecao>> getSecoesPorArvoreId(int arvoreId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'cubagens_secoes',
+      where: 'cubagemArvoreId = ?',
+      whereArgs: [arvoreId],
+      orderBy: 'alturaMedicao ASC',
+    );
+    return List.generate(maps.length, (i) => CubagemSecao.fromMap(maps[i]));
+  }
+
+  Future<void> deletarCubagem(int id) async {
+    final db = await database;
+    await db.delete('cubagens_arvores', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> exportarCubagens(BuildContext context) async {
+    final List<CubagemArvore> arvores = await getTodasCubagens();
+    if (arvores.isEmpty) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhuma cubagem para exportar.')));
+      return;
+    }
+    
+    List<List<dynamic>> rows = [];
+    rows.add(['id_arvore_db', 'identificador_arvore', 'altura_total_m', 'cap_cm', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
+
+    for (var arvore in arvores) {
+      final secoes = await getSecoesPorArvoreId(arvore.id!);
+      if (secoes.isEmpty) {
+         rows.add([arvore.id, arvore.identificador, arvore.alturaTotal, arvore.valorCAP, null, null, null, null, null, null]);
+      } else {
+        for (var secao in secoes) {
+          rows.add([
+            arvore.id, arvore.identificador, arvore.alturaTotal, arvore.valorCAP,
+            secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm,
+            secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2),
+          ]);
+        }
+      }
+    }
+
+    try {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gerando arquivo CSV de cubagens...')));
+
+      final directory = await getApplicationDocumentsDirectory();
+      final hoje = DateTime.now();
+      final nomePastaData = DateFormat('yyyy-MM-dd').format(hoje);
+      final pastaDoDia = Directory('${directory.path}/$nomePastaData');
+
+      if (!await pastaDoDia.exists()) {
+        await pastaDoDia.create(recursive: true);
+      }
+      
+      final fileName = 'geoforest_export_cubagens_${DateFormat('HH-mm-ss').format(hoje)}.csv';
+      final path = '${pastaDoDia.path}/$fileName';
+      
+      final csvData = const ListToCsvConverter().convert(rows);
+      await File(path).writeAsString(csvData);
+
+      if (context.mounted) {
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+          await Share.shareXFiles([XFile(path)], subject: 'Exportação de Todas as Cubagens');
+      }
+    } catch (e, s) {
+        debugPrint('Erro na exportação de cubagens: $e\n$s');
+        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Falha na exportação de cubagens: ${e.toString()}'), backgroundColor: Colors.red));
+    }
+  }
+
+  Future<void> exportarUmaCubagem(BuildContext context, int arvoreId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> arvoreMaps = await db.query('cubagens_arvores', where: 'id = ?', whereArgs: [arvoreId]);
+
+    if (arvoreMaps.isEmpty) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Árvore não encontrada.')));
+      return;
+    }
+
+    final arvore = CubagemArvore.fromMap(arvoreMaps.first);
+    final secoes = await getSecoesPorArvoreId(arvore.id!);
+
+    List<List<dynamic>> rows = [];
+    rows.add(['identificador_arvore', 'altura_total_m', 'tipo_medida_cap', 'valor_cap_cm', 'altura_base_m', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
+
+    if (secoes.isEmpty) {
+      rows.add([arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase, null, null, null, null, null, null]);
+    } else {
+      for (var secao in secoes) {
+        rows.add([
+          arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase,
+          secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm,
+          secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2),
+        ]);
+      }
+    }
+
+    final csvData = const ListToCsvConverter().convert(rows);
+
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final hoje = DateTime.now();
+      final nomePastaData = DateFormat('yyyy-MM-dd').format(hoje);
+      final pastaDoDia = Directory('${directory.path}/$nomePastaData');
+
+      if (!await pastaDoDia.exists()) {
+        await pastaDoDia.create(recursive: true);
+      }
+      
+      final sanitizedId = arvore.identificador.replaceAll(RegExp(r'[\\/*?:"<>|]'), '_');
+      final fileName = 'Cubagem_${sanitizedId}_${DateFormat('HH-mm-ss').format(hoje)}.csv';
+      final path = '${pastaDoDia.path}/$fileName';
+      
+      await File(path).writeAsString(csvData);
+
+      if (context.mounted) {
+        await Share.shareXFiles([XFile(path)], subject: 'Exportação de Cubagem: ${arvore.identificador}');
+      }
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao exportar: $e')));
+    }
+  }
 
   // =============================================================
   // ============= NOVO MÉTODO PARA LIMPEZA INTELIGENTE ============
