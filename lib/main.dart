@@ -5,31 +5,34 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:provider/provider.dart';
+
+import 'firebase_options.dart';
+import 'package:geoforestcoletor/providers/map_provider.dart';
+import 'package:geoforestcoletor/controller/login_controller.dart';
 import 'package:geoforestcoletor/pages/home_page.dart';
 import 'package:geoforestcoletor/pages/login_page.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:geoforestcoletor/pages/map_import_page.dart';
 import 'package:geoforestcoletor/pages/equipe_page.dart';
-import 'package:provider/provider.dart'; // <<< IMPORT ADICIONADO
-import 'package:geoforestcoletor/providers/map_provider.dart'; // <<< IMPORT ADICIONADO
 
-// Função main agora é async para usar 'await'
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  await SystemChrome.setPreferredOrientations(
+    [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown],
+  );
+
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
+
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+
     runApp(const MyApp());
   } catch (e) {
     runApp(
@@ -49,14 +52,10 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // =============================================================
-    // =========== INJEÇÃO DO PROVIDER PARA PERSISTÊNCIA ===========
-    // =============================================================
     return MultiProvider(
       providers: [
-        // Cria uma instância única do MapProvider que viverá durante toda a sessão do app
-        ChangeNotifierProvider(create: (_) => MapProvider()),
-        // Você pode adicionar outros providers globais aqui se precisar
+        ChangeNotifierProvider(create: (_) => LoginController()), // Controller do login
+        ChangeNotifierProvider(create: (_) => MapProvider()), // MapProvider persistente
       ],
       child: MaterialApp(
         title: 'Geo Forest Analytics',
@@ -65,7 +64,20 @@ class MyApp extends StatelessWidget {
         darkTheme: _buildThemeData(Brightness.dark),
         initialRoute: '/',
         routes: {
-          '/': (context) => const LoginPage(),
+          // Rota inicial agora verifica login
+          '/': (context) {
+            final loginController = Provider.of<LoginController>(context, listen: false);
+            loginController.checkLoginStatus();
+            return Consumer<LoginController>(
+              builder: (context, controller, child) {
+                if (controller.isLoggedIn) {
+                  return const HomePage(title: 'Geo Forest Analytics');
+                } else {
+                  return const LoginPage();
+                }
+              },
+            );
+          },
           '/equipe': (context) => const EquipePage(),
           '/home': (context) => const HomePage(title: 'Geo Forest Analytics'),
           '/map_import': (context) => const MapImportPage(),
@@ -92,7 +104,10 @@ class MyApp extends StatelessWidget {
     final baseColor = const Color(0xFF617359);
     return ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: baseColor, brightness: brightness),
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: baseColor,
+        brightness: brightness,
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: brightness == Brightness.light ? baseColor : Colors.grey[900],
         foregroundColor: Colors.white,
@@ -105,7 +120,10 @@ class MyApp extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       ),
-      cardTheme: CardThemeData(elevation: 2, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+      cardTheme: CardThemeData(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
       textTheme: const TextTheme(
         headlineMedium: TextStyle(color: Color(0xFF1D4433), fontWeight: FontWeight.bold),
         bodyLarge: TextStyle(color: Color(0xFF1D4433)),
@@ -115,10 +133,13 @@ class MyApp extends StatelessWidget {
   }
 }
 
+// Tela de erro
 class ErrorScreen extends StatelessWidget {
   final String message;
   final VoidCallback? onRetry;
+
   const ErrorScreen({super.key, required this.message, this.onRetry});
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -133,14 +154,25 @@ class ErrorScreen extends StatelessWidget {
               const SizedBox(height: 20),
               Text(
                 'Application Error',
-                style: TextStyle(color: Colors.red[700], fontSize: 24, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.red[700],
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 15),
-              Text(message, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16),
+              ),
               const SizedBox(height: 30),
               if (onRetry != null)
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF617359), foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF617359),
+                    foregroundColor: Colors.white,
+                  ),
                   onPressed: onRetry,
                   child: const Text('Try Again'),
                 ),

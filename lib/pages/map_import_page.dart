@@ -1,4 +1,4 @@
-// lib/pages/map_import_page.dart
+// lib/pages/screens/map_import_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -6,7 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:geoforestcoletor/providers/map_provider.dart';
 import 'package:geoforestcoletor/pages/coleta_dados_page.dart';
-import 'package:flutter/services.dart';
+import 'package:geoforestcoletor/models/sample_point.dart'; // <<< 1. IMPORT NECESSÁRIO >>>
 
 class MapImportPage extends StatefulWidget {
   const MapImportPage({super.key});
@@ -34,9 +34,41 @@ class _MapImportPageState extends State<MapImportPage> {
     });
   }
   
+  // =========================================================================
+  // ====================== NOVAS FUNÇÕES HELPER PARA COR ====================
+  // =========================================================================
+  /// Retorna a cor de fundo do marcador com base no status da parcela.
+  Color _getMarkerColor(SampleStatus status) {
+    switch (status) {
+      case SampleStatus.open:
+        return Colors.orange.shade300; // Laranja claro
+      case SampleStatus.completed:
+        return Colors.green; // Verde
+      case SampleStatus.exported:
+        return Colors.blue; // Azul
+      case SampleStatus.untouched:
+              return Colors.white; // Branco
+    }
+  }
+
+  /// Retorna a cor do texto do marcador para garantir um bom contraste.
+  Color _getMarkerTextColor(SampleStatus status) {
+    switch (status) {
+      case SampleStatus.open:
+      case SampleStatus.untouched:
+        return Colors.black; // Texto preto para fundos claros
+      case SampleStatus.completed:
+      case SampleStatus.exported:
+       return Colors.white; // Texto branco para fundos escuros
+    }
+  }
+  // =========================================================================
+
+
   Future<void> _handleImport() async {
     final provider = context.read<MapProvider>();
-    final count = await provider.importAndClear();
+    // provider.importAndClear() agora limpa os dados antigos, garantindo a persistência correta.
+    final count = await provider.importAndClear(); 
     
     if (!mounted) return;
 
@@ -155,6 +187,7 @@ class _MapImportPageState extends State<MapImportPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Usamos 'watch' para que a tela reconstrua quando os dados no provider mudarem (ex: cores)
     final mapProvider = context.watch<MapProvider>();
 
     return Scaffold(
@@ -186,13 +219,25 @@ class _MapImportPageState extends State<MapImportPage> {
               ),
               if (mapProvider.polygons.isNotEmpty) PolygonLayer(polygons: mapProvider.polygons),
               MarkerLayer(
+                // O loop agora renderiza os marcadores com as cores dinâmicas
                 markers: mapProvider.samplePoints.map((samplePoint) {
+                  // Pega as cores certas usando as novas funções helper
+                  final color = _getMarkerColor(samplePoint.status);
+                  final textColor = _getMarkerTextColor(samplePoint.status);
+
                   return Marker(
                     width: 40.0,
                     height: 40.0,
                     point: samplePoint.position,
                     child: GestureDetector(
                       onTap: () {
+                        // <<< LÓGICA DE ATUALIZAÇÃO DE STATUS AO CLICAR >>>
+                        // Apenas muda o status para 'aberto' se ele ainda não foi tocado.
+                        if (samplePoint.status == SampleStatus.untouched) {
+                          context.read<MapProvider>().updateSampleStatus(samplePoint.id, SampleStatus.open);
+                        }
+
+                        // A navegação para a página de coleta permanece a mesma.
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -204,10 +249,10 @@ class _MapImportPageState extends State<MapImportPage> {
                           ),
                         );
                       },
-                      // <<< MARCADOR COM NÚMERO MAIS VISÍVEL >>>
+                      // O widget Container agora usa as cores dinâmicas.
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
+                          color: color, // <<< USA A COR DINÂMICA
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
@@ -220,8 +265,8 @@ class _MapImportPageState extends State<MapImportPage> {
                         child: Center(
                           child: Text(
                             samplePoint.id.toString(),
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: textColor, // <<< USA A COR DE TEXTO DINÂMICA
                               fontWeight: FontWeight.bold,
                               fontSize: 14,
                             ),
@@ -250,11 +295,11 @@ class _MapImportPageState extends State<MapImportPage> {
             ),
         ],
       ),
+      // Seu FloatingActionButton original foi mantido intacto.
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // <<< BOTÃO PARA TROCAR A CAMADA DO MAPA >>>
           FloatingActionButton(
             onPressed: () {
               context.read<MapProvider>().switchMapLayer();
@@ -263,9 +308,10 @@ class _MapImportPageState extends State<MapImportPage> {
             heroTag: 'switchLayerFab',
             mini: true,
             child: Icon(
+              // Lógica de ícone para troca de camada mantida.
               mapProvider.currentLayer == MapLayerType.ruas
                 ? Icons.satellite_outlined
-                : Icons.map_outlined,
+                : (mapProvider.currentLayer == MapLayerType.satelite ? Icons.terrain : Icons.map_outlined),
             ),
           ),
           const SizedBox(height: 16),

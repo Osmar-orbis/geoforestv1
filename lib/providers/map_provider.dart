@@ -3,7 +3,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:geoforestcoletor/models/sample_point.dart';
+import 'package:geoforestcoletor/models/sample_point.dart'; // <<< 1. IMPORT NECESSÁRIO
 import 'package:geoforestcoletor/services/geojson_service.dart';
 import 'package:geoforestcoletor/services/sampling_service.dart';
 
@@ -15,11 +15,11 @@ class MapProvider with ChangeNotifier {
 
   // ESTADO INTERNO DO PROVIDER
   List<Polygon> _polygons = [];
-  List<SamplePoint> _samplePoints = [];
+  List<SamplePoint> _samplePoints = []; // O tipo de dado foi atualizado para SamplePoint
   bool _isLoading = false;
   String _farmName = '';
   String _blockName = '';
-  MapLayerType _currentLayer = MapLayerType.ruas;
+  MapLayerType _currentLayer = MapLayerType.satelite; // Mudei o padrão para satélite
 
   // URLs para os diferentes "paineis" de mapa.
   final Map<MapLayerType, String> _tileUrls = {
@@ -28,8 +28,6 @@ class MapProvider with ChangeNotifier {
     MapLayerType.sateliteMapbox: 'https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/256/{z}/{x}/{y}@2x?access_token={accessToken}',
   };
 
-  // <<< COLE SUA CHAVE DE ACESSO PÚBLICA DO MAPBOX AQUI >>>
-  // Se não tiver uma, a opção de mapa Mapbox não funcionará.
   final String _mapboxAccessToken = 'pk.eyJ1IjoiZ2VvZm9yZXN0YXBwIiwiYSI6ImNtY2FyczBwdDAxZmYybHB1OWZlbG1pdW0ifQ.5HeYC0moMJ8dzZzVXKTPrg';
 
   // GETTERS PÚBLICOS (A forma como a UI lê o estado)
@@ -43,7 +41,7 @@ class MapProvider with ChangeNotifier {
   String get currentTileUrl {
     String url = _tileUrls[_currentLayer]!;
     if (url.contains('{accessToken}')) {
-      if (_mapboxAccessToken.contains('SUA_CHAVE')) {
+      if (_mapboxAccessToken.contains('SUA_CHAVE_AQUI')) {
         // Fallback para o satélite padrão se a chave não for inserida
         return _tileUrls[MapLayerType.satelite]!;
       }
@@ -62,6 +60,7 @@ class MapProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Limpa todos os dados do mapa, exceto o tipo de camada.
   void clearMapData() {
     _polygons = [];
     _samplePoints = [];
@@ -70,16 +69,17 @@ class MapProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Importa um novo GeoJSON, limpando todos os dados anteriores.
   Future<int> importAndClear() async {
     _setLoading(true);
+    // Limpa tudo antes de começar a importar o novo arquivo
+    clearMapData();
     _polygons = await _geoJsonService.importAndParseGeoJson();
-    _samplePoints = []; 
-    _farmName = '';
-    _blockName = '';
     _setLoading(false);
     return _polygons.length;
   }
 
+  /// Gera os pontos de amostragem com base nos polígonos carregados.
   Future<int> generateSamples({
     required double hectaresPerSample,
     required String farmName,
@@ -92,6 +92,7 @@ class MapProvider with ChangeNotifier {
     _farmName = farmName;
     _blockName = blockName;
     
+    // O método 'compute' é ótimo para performance, mantemos ele.
     _samplePoints = await compute(_generatePointsInBackground, {
       'polygons': _polygons,
       'hectaresPerSample': hectaresPerSample,
@@ -100,8 +101,10 @@ class MapProvider with ChangeNotifier {
     _setLoading(false);
     return _samplePoints.length;
   }
-  
+
+  /// Função estática auxiliar que roda em uma thread separada via 'compute'.
   static List<SamplePoint> _generatePointsInBackground(Map<String, dynamic> params) {
+    // Esta função não pode acessar 'this', então instanciamos o serviço aqui.
     final samplingService = SamplingService();
     final List<Polygon> polygons = params['polygons'];
     final double hectaresPerSample = params['hectaresPerSample'];
@@ -112,6 +115,31 @@ class MapProvider with ChangeNotifier {
     );
   }
 
+  // =========================================================================
+  // ============ FUNCIONALIDADE NOVA: GERENCIAMENTO DE STATUS ===============
+  // =========================================================================
+
+  /// Atualiza o status de uma parcela específica e notifica a UI para reconstruir.
+  void updateSampleStatus(int pointId, SampleStatus newStatus) {
+    // 'indexWhere' é a forma mais performática de encontrar um item em uma lista.
+    final index = _samplePoints.indexWhere((p) => p.id == pointId);
+
+    // Verificamos se o ponto foi encontrado para evitar erros.
+    if (index != -1) {
+      // Usamos o método 'copyWith' que criamos no modelo para gerar uma nova instância
+      // do ponto com o status atualizado. Isso segue os princípios de imutabilidade.
+      _samplePoints[index] = _samplePoints[index].copyWith(status: newStatus);
+
+      // O comando mais importante: notifica todos os widgets que estão 'escutando'
+      // (usando context.watch) que este provider mudou, fazendo com que eles
+      // se reconstruam e mostrem a nova cor.
+      notifyListeners();
+    }
+  }
+
+  // =========================================================================
+
+  /// Método privado para controlar o estado de loading de forma centralizada.
   void _setLoading(bool value) {
     _isLoading = value;
     notifyListeners();

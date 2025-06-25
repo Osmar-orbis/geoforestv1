@@ -1,19 +1,22 @@
-// lib/pages/coleta_dados_page.dart
+// lib/pages/screens/coleta_dados_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:math' as math;
 import 'package:geoforestcoletor/models/parcela_model.dart';
-import 'package:geoforestcoletor/pages/inventario_page.dart';
+import 'package:geoforestcoletor/pages/inventario_page.dart'; // Mantido para o fluxo de 'iniciar'
 import 'package:geoforestcoletor/helpers/database_helper.dart';
+
+// <<< 1. IMPORTS NECESSÁRIOS PARA O PROVIDER E O MODELO DE STATUS >>>
+import 'package:provider/provider.dart';
+import 'package:geoforestcoletor/providers/map_provider.dart';
+import 'package:geoforestcoletor/models/sample_point.dart';
 
 enum FormaParcela { retangular, circular }
 
 class ColetaDadosPage extends StatefulWidget {
-  // Parâmetros para quando a tela é chamada para edição
   final Parcela? parcelaParaEditar;
   
-  // Parâmetros para quando a tela é chamada a partir do mapa de amostragem
   final String? nomeFazendaInicial;
   final String? nomeTalhaoInicial;
   final int? idParcelaInicial;
@@ -51,7 +54,6 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
   @override
   void initState() {
     super.initState();
-    // Prioriza os dados de edição, depois os dados do mapa, depois vazio.
     if (widget.parcelaParaEditar != null) {
       final p = widget.parcelaParaEditar!;
       _nomeFazendaController.text = p.nomeFazenda;
@@ -64,7 +66,6 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
         _posicaoAtual = Position(latitude: p.latitude!, longitude: p.longitude!, timestamp: DateTime.now(), accuracy: 0.0, altitude: 0.0, altitudeAccuracy: 0.0, heading: 0.0, headingAccuracy: 0.0, speed: 0.0, speedAccuracy: 0.0);
       }
     } else {
-      // Pré-preenche com dados do mapa, se existirem
       _nomeFazendaController.text = widget.nomeFazendaInicial ?? '';
       _talhaoParcelaController.text = widget.nomeTalhaoInicial ?? '';
       _idParcelaController.text = widget.idParcelaInicial?.toString() ?? '';
@@ -101,49 +102,119 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
     if (mounted) setState(() => _areaCalculada = area);
   }
 
-  Future<void> _salvarDados() async {
+  Future<void> _salvarEIniciarColeta() async {
+    // Esta função mantém a lógica original de salvar e ir para a página de inventário.
     if (!_formKey.currentState!.validate()) return;
-    if (_areaCalculada <= 0 && widget.parcelaParaEditar == null) {
+    if (_areaCalculada <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A área da parcela deve ser maior que zero'), backgroundColor: Colors.orange));
       return;
     }
     setState(() => _salvando = true);
     try {
       final dbHelper = DatabaseHelper();
-      if (widget.parcelaParaEditar == null) {
-        final novaParcela = Parcela(
-          nomeFazenda: _nomeFazendaController.text.trim(),
-          nomeTalhao: _talhaoParcelaController.text.trim(),
-          idParcela: _idParcelaController.text.trim(),
-          areaMetrosQuadrados: _areaCalculada,
-          espacamento: _espacamentoController.text.trim().isNotEmpty ? _espacamentoController.text.trim() : null,
-          observacao: _observacaoController.text.trim().isNotEmpty ? _observacaoController.text.trim() : null,
-          latitude: _posicaoAtual?.latitude,
-          longitude: _posicaoAtual?.longitude,
-          dataColeta: DateTime.now(),
-          status: StatusParcela.emAndamento,
+      final novaParcela = Parcela(
+        nomeFazenda: _nomeFazendaController.text.trim(),
+        nomeTalhao: _talhaoParcelaController.text.trim(),
+        idParcela: _idParcelaController.text.trim(),
+        areaMetrosQuadrados: _areaCalculada,
+        espacamento: _espacamentoController.text.trim().isNotEmpty ? _espacamentoController.text.trim() : null,
+        observacao: _observacaoController.text.trim().isNotEmpty ? _observacaoController.text.trim() : null,
+        latitude: _posicaoAtual?.latitude,
+        longitude: _posicaoAtual?.longitude,
+        dataColeta: DateTime.now(),
+        status: StatusParcela.emAndamento, // Continua como 'em andamento'
+      );
+      final parcelaSalva = await dbHelper.saveFullColeta(novaParcela, []);
+      if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => InventarioPage(parcela: parcelaSalva)));
+      
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _salvando = false);
+    }
+  }
+
+  // <<< 2. NOVA FUNÇÃO PARA MARCAR COMO CONCLUÍDA E VOLTAR AO MAPA >>>
+  Future<void> _finalizarParcelaVazia() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    // Adicionamos uma confirmação para evitar cliques acidentais.
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Finalizar Parcela?'),
+        content: const Text('Isso marcará a parcela como concluída sem adicionar árvores. Deseja continuar?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Finalizar')),
+        ],
+      ),
+    );
+
+    if (confirmar != true) return;
+
+    setState(() => _salvando = true);
+    try {
+      final dbHelper = DatabaseHelper();
+      // Salva os dados no banco de dados local com status 'concluido'
+      final parcela = Parcela(
+        nomeFazenda: _nomeFazendaController.text.trim(),
+        nomeTalhao: _talhaoParcelaController.text.trim(),
+        idParcela: _idParcelaController.text.trim(),
+        areaMetrosQuadrados: _areaCalculada,
+        espacamento: _espacamentoController.text.trim().isNotEmpty ? _espacamentoController.text.trim() : null,
+        observacao: _observacaoController.text.trim().isNotEmpty ? _observacaoController.text.trim() : null,
+        latitude: _posicaoAtual?.latitude,
+        longitude: _posicaoAtual?.longitude,
+        dataColeta: DateTime.now(),
+        status: StatusParcela.concluida, // << Status 'concluido'
+      );
+      await dbHelper.saveFullColeta(parcela, []);
+      
+      // <<< 3. ATUALIZA O STATUS NO MAPPROVIDER >>>
+      // Verifica se idParcelaInicial não é nulo antes de usar.
+      if (widget.idParcelaInicial != null) {
+        context.read<MapProvider>().updateSampleStatus(
+          widget.idParcelaInicial!, 
+          SampleStatus.completed,
         );
-        final parcelaSalva = await dbHelper.saveFullColeta(novaParcela, []);
-        if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => InventarioPage(parcela: parcelaSalva)));
-      } else {
-        final parcelaEditada = Parcela(
-          dbId: widget.parcelaParaEditar!.dbId,
-          nomeFazenda: _nomeFazendaController.text.trim(),
-          nomeTalhao: _talhaoParcelaController.text.trim(),
-          idParcela: _idParcelaController.text.trim(),
-          areaMetrosQuadrados: _areaCalculada > 0 ? _areaCalculada : widget.parcelaParaEditar!.areaMetrosQuadrados,
-          espacamento: _espacamentoController.text.trim().isNotEmpty ? _espacamentoController.text.trim() : null,
-          observacao: _observacaoController.text.trim().isNotEmpty ? _observacaoController.text.trim() : null,
-          latitude: _posicaoAtual?.latitude,
-          longitude: _posicaoAtual?.longitude,
-          dataColeta: widget.parcelaParaEditar!.dataColeta,
-          status: widget.parcelaParaEditar!.status,
-        );
-        await dbHelper.updateParcela(parcelaEditada);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Parcela atualizada com sucesso!'), backgroundColor: Colors.green));
-          Navigator.pop(context, true);
-        }
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Parcela finalizada com sucesso!'), backgroundColor: Colors.green));
+        Navigator.of(context).pop(); // Volta para a tela do mapa
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao finalizar: $e'), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _salvando = false);
+    }
+  }
+
+
+  Future<void> _atualizarDadosEditados() async {
+    // Esta função mantém a lógica original de edição.
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _salvando = true);
+    try {
+      final dbHelper = DatabaseHelper();
+      final parcelaEditada = Parcela(
+        dbId: widget.parcelaParaEditar!.dbId,
+        nomeFazenda: _nomeFazendaController.text.trim(),
+        nomeTalhao: _talhaoParcelaController.text.trim(),
+        idParcela: _idParcelaController.text.trim(),
+        areaMetrosQuadrados: _areaCalculada > 0 ? _areaCalculada : widget.parcelaParaEditar!.areaMetrosQuadrados,
+        espacamento: _espacamentoController.text.trim().isNotEmpty ? _espacamentoController.text.trim() : null,
+        observacao: _observacaoController.text.trim().isNotEmpty ? _observacaoController.text.trim() : null,
+        latitude: _posicaoAtual?.latitude,
+        longitude: _posicaoAtual?.longitude,
+        dataColeta: widget.parcelaParaEditar!.dataColeta,
+        status: widget.parcelaParaEditar!.status,
+      );
+      await dbHelper.updateParcela(parcelaEditada);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Parcela atualizada com sucesso!'), backgroundColor: Colors.green));
+        Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
@@ -151,6 +222,7 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
       if (mounted) setState(() => _salvando = false);
     }
   }
+
 
   Future<void> _obterLocalizacaoAtual() async {
     setState(() { _buscandoLocalizacao = true; _erroLocalizacao = null; });
@@ -188,6 +260,7 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // ... Todos os seus TextFormFields e Widgets de layout permanecem os mesmos ...
               TextFormField(
                 controller: _nomeFazendaController,
                 decoration: const InputDecoration(labelText: 'Nome da fazenda', border: OutlineInputBorder(), prefixIcon: Icon(Icons.business)),
@@ -222,16 +295,8 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
                 keyboardType: TextInputType.multiline,
               ),
               const SizedBox(height: 24),
-              SizedBox(
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _salvando ? null : _salvarDados,
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1D4433), foregroundColor: Colors.white),
-                  child: _salvando
-                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
-                      : Text(isEditing ? 'Salvar Alterações' : 'Iniciar Coleta', style: const TextStyle(fontSize: 18)),
-                ),
-              ),
+              // <<< 4. LÓGICA DE BOTÕES MODIFICADA >>>
+              _buildActionButtons(isEditing),
             ],
           ),
         ),
@@ -239,7 +304,57 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
     );
   }
 
+  Widget _buildActionButtons(bool isEditing) {
+    if (isEditing) {
+      // Se está editando, mostra apenas um botão de 'Salvar Alterações'.
+      return SizedBox(
+        height: 50,
+        child: ElevatedButton(
+          onPressed: _salvando ? null : _atualizarDadosEditados,
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1D4433), foregroundColor: Colors.white),
+          child: _salvando
+              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
+              : const Text('Salvar Alterações', style: TextStyle(fontSize: 18)),
+        ),
+      );
+    } else {
+      // Se é uma nova coleta, mostra dois botões lado a lado.
+      return Row(
+        children: [
+          Expanded(
+            child: SizedBox(
+              height: 50,
+              child: OutlinedButton(
+                onPressed: _salvando ? null : _finalizarParcelaVazia,
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF1D4433)),
+                  foregroundColor: const Color(0xFF1D4433),
+                ),
+                child: const Text('Finalizar'),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: SizedBox(
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _salvando ? null : _salvarEIniciarColeta,
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1D4433), foregroundColor: Colors.white),
+                child: _salvando
+                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
+                    : const Text('Iniciar Coleta', style: TextStyle(fontSize: 18)),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+  }
+
+
   Widget _buildCalculadoraArea() {
+    // Este widget não precisa de modificação
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -276,6 +391,7 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
   }
 
   Widget _buildColetorCoordenadas() {
+    // Este widget não precisa de modificação
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
