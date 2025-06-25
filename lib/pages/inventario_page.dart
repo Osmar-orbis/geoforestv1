@@ -1,5 +1,3 @@
-// lib/pages/inventario_page.dart (VERSÃO ATUALIZADA COM FLUXO CONTÍNUO)
-
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/helpers/database_helper.dart';
 import 'package:geoforestcoletor/models/arvore_model.dart';
@@ -32,17 +30,12 @@ class _InventarioPageState extends State<InventarioPage> {
   Future<void> _carregarDadosIniciais() async {
     setState(() => _isLoading = true);
     if (widget.parcela.dbId != null) {
-      final arvoresDoBanco = await DatabaseHelper().getArvoresDaParcela(widget.parcela.dbId!);
-      if (mounted) {
-        setState(() {
-          _arvoresColetadas = arvoresDoBanco;
-        });
-      }
+      final arvoresDoBanco =
+          await DatabaseHelper().getArvoresDaParcela(widget.parcela.dbId!);
+      setState(() => _arvoresColetadas = arvoresDoBanco);
     }
     _atualizarContadoresLinhaPosicao();
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
+    setState(() => _isLoading = false);
   }
 
   void _atualizarContadoresLinhaPosicao() {
@@ -51,14 +44,14 @@ class _InventarioPageState extends State<InventarioPage> {
       _posicaoNaLinhaAtual = 1;
       return;
     }
-    int maxLinha = _arvoresColetadas.map((a) => a.linha).reduce((a, b) => a > b ? a : b);
-    final arvoresNaMaxLinha = _arvoresColetadas.where((a) => a.linha == maxLinha).toList();
-    if (arvoresNaMaxLinha.isEmpty) {
-      _linhaAtual = maxLinha + 1;
-      _posicaoNaLinhaAtual = 1;
-      return;
-    }
-    int maxPosicaoNaMaxLinha = arvoresNaMaxLinha.map((a) => a.posicaoNaLinha).reduce((a, b) => a > b ? a : b);
+    int maxLinha =
+        _arvoresColetadas.map((a) => a.linha).reduce((a, b) => a > b ? a : b);
+    final arvoresNaMaxLinha =
+        _arvoresColetadas.where((a) => a.linha == maxLinha).toList();
+    int maxPosicaoNaMaxLinha = arvoresNaMaxLinha
+        .map((a) => a.posicaoNaLinha)
+        .reduce((a, b) => a > b ? a : b);
+
     final ultimaArvore = _arvoresColetadas.lastWhere(
       (a) => a.linha == maxLinha && a.posicaoNaLinha == maxPosicaoNaMaxLinha,
       orElse: () => _arvoresColetadas.last,
@@ -73,22 +66,17 @@ class _InventarioPageState extends State<InventarioPage> {
     }
   }
 
-  // =============================================================
-  // ========= NOVA LÓGICA DE ADIÇÃO COM FLUXO CONTÍNUO ===========
-  // =============================================================
   Future<void> _abrirFormularioParaAdicionar() async {
-    bool continuarAdicionando = true; // Começa o loop
-
+    bool continuarAdicionando = true;
     while (continuarAdicionando) {
-      // Garante que os contadores estão sempre atualizados antes de abrir o diálogo
-      _atualizarContadoresLinhaPosicao(); 
-      
-      bool continuarNaMesmaPosicaoFuste = false; // Renomeado para clareza
+      _atualizarContadoresLinhaPosicao();
+
+      bool continuarNaMesmaPosicaoFuste = false;
       bool primeiroFuste = true;
 
       do {
-        continuarNaMesmaPosicaoFuste = false; // Reseta para cada fuste
-        
+        continuarNaMesmaPosicaoFuste = false;
+
         final result = await showDialog<DialogResult>(
           context: context,
           barrierDismissible: false,
@@ -100,58 +88,64 @@ class _InventarioPageState extends State<InventarioPage> {
         );
 
         if (result == null) {
-          // Se o usuário cancelou (pressionou 'Cancelar' ou fora do diálogo), quebra os dois loops
           continuarAdicionando = false;
-          break; 
+          break;
         }
 
-        // Se chegou aqui, o usuário salvou
         setState(() => _arvoresColetadas.add(result.arvore));
         await _salvarEstadoAtual(showSnackbar: false);
-        
-        continuarNaMesmaPosicaoFuste = result.continuarNaMesmaPosicao;
-        if (continuarNaMesmaPosicaoFuste) {
-          primeiroFuste = false;
-        }
 
-        // Verifica se o usuário quer ir para a próxima árvore
-        // Se não for para a próxima posição E não for adicionar outro fuste, então para o loop principal
+        continuarNaMesmaPosicaoFuste = result.continuarNaMesmaPosicao;
+        if (continuarNaMesmaPosicaoFuste) primeiroFuste = false;
+
         if (!result.irParaProxima && !continuarNaMesmaPosicaoFuste) {
-          continuarAdicionando = false; // Quebra o loop principal
+          continuarAdicionando = false;
         }
-        
       } while (continuarNaMesmaPosicaoFuste);
     }
-    
-    // Atualiza a UI uma última vez após o fim do loop
+
     setState(_atualizarContadoresLinhaPosicao);
   }
-  
+
+  // =======================================================================
+  // ====================== MÉTODO COM A CORREÇÃO APLICADA =================
+  // =======================================================================
   Future<void> _abrirFormularioParaEditar(Arvore arvore) async {
     final result = await showDialog<DialogResult>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => ArvoreDialog(arvoreParaEditar: arvore, linhaAtual: arvore.linha, posicaoNaLinhaAtual: arvore.posicaoNaLinha),
+      builder: (context) => ArvoreDialog(
+        arvoreParaEditar: arvore,
+        linhaAtual: arvore.linha,
+        posicaoNaLinhaAtual: arvore.posicaoNaLinha,
+      ),
     );
 
     if (result != null) {
-      final index = _arvoresColetadas.indexWhere((a) => a.id == result.arvore.id);
+      // Encontra o item a ser substituído usando o ID da árvore original.
+      // Isso é crucial para que o _salvarEstadoAtual tenha a lista correta.
+      final index = _arvoresColetadas.indexWhere((a) => a.id == arvore.id);
+
       if (index != -1) {
-        setState(() {
-          _arvoresColetadas[index] = result.arvore;
-          _arvoresColetadas.sort((a, b) {
-            int compLinha = a.linha.compareTo(b.linha);
-            if (compLinha != 0) return compLinha;
-            return a.posicaoNaLinha.compareTo(b.posicaoNaLinha);
-          });
-        });
+        // 1. Atualiza o item na lista local APENAS para preparar para o salvamento.
+        _arvoresColetadas[index] = result.arvore;
+
+        // 2. Salva a lista inteira e atualizada no banco.
+        // O método saveFullColeta vai apagar os registros antigos e inserir a lista atualizada.
         await _salvarEstadoAtual();
-        setState(_atualizarContadoresLinhaPosicao);
+
+        // 3. === A CORREÇÃO PRINCIPAL (FONTE DA VERDADE) ===
+        // Em vez de manipular a lista localmente (sort, setState, etc.),
+        // o que causava o bug da "lambança", nós recarregamos TUDO do banco.
+        // Isso garante que a ordem e os dados estejam 100% corretos e
+        // sincronizados com o que foi salvo.
+        await _carregarDadosIniciais();
       }
     }
   }
 
-  Future<void> _salvarEstadoAtual({bool showSnackbar = true, bool concluir = false}) async {
+  Future<void> _salvarEstadoAtual(
+      {bool showSnackbar = true, bool concluir = false}) async {
     if (_isSaving) return;
     setState(() => _isSaving = true);
     try {
@@ -159,30 +153,69 @@ class _InventarioPageState extends State<InventarioPage> {
         widget.parcela.status = StatusParcela.concluida;
         _identificarArvoresDominantes();
       }
+
+      // Garante que a lista esteja ordenada ANTES de salvar, para consistência.
+      _arvoresColetadas.sort((a, b) {
+        int compLinha = a.linha.compareTo(b.linha);
+        if (compLinha != 0) return compLinha;
+        return a.posicaoNaLinha.compareTo(b.posicaoNaLinha);
+      });
+
       await DatabaseHelper().saveFullColeta(widget.parcela, _arvoresColetadas);
+      
       if (mounted && showSnackbar) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Progresso salvo!'), duration: Duration(seconds: 2), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Progresso salvo!'),
+              duration: Duration(seconds: 2),
+              backgroundColor: Colors.green),
+        );
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red),
+        );
+      }
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
   Future<void> _concluirColeta() async {
-    final confirm = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
-      title: const Text('Concluir Coleta'),
-      content: const Text('Tem certeza que deseja marcar esta parcela como concluída?'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-        ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Concluir')),
-      ],
-    )) ?? false;
-      
+    final confirm = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Concluir Coleta'),
+            content: const Text(
+                'Tem certeza que deseja marcar esta parcela como concluída?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Concluir'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
     if (confirm) {
-      await _salvarEstadoAtual(concluir: true);
-      if (mounted) Navigator.of(context).pop(true);
+      await _salvarEstadoAtual(concluir: true, showSnackbar: false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Parcela concluída com sucesso!'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+        Navigator.of(context).pop(true); // Retorna true para a tela anterior
+      }
     }
   }
 
@@ -190,8 +223,12 @@ class _InventarioPageState extends State<InventarioPage> {
     for (var arvore in _arvoresColetadas) {
       arvore.dominante = false;
     }
-    final int numeroDeDominantes = (widget.parcela.areaMetrosQuadrados / 100).floor();
-    final arvoresCandidatas = _arvoresColetadas.where((a) => a.status != StatusArvore.falha && a.status != StatusArvore.morta).toList();
+    final int numeroDeDominantes =
+        (widget.parcela.areaMetrosQuadrados / 100).floor();
+    final arvoresCandidatas = _arvoresColetadas
+        .where((a) =>
+            a.status != StatusArvore.falha && a.status != StatusArvore.morta)
+        .toList();
 
     if (arvoresCandidatas.length <= numeroDeDominantes) {
       for (var arvore in arvoresCandidatas) {
@@ -203,13 +240,17 @@ class _InventarioPageState extends State<InventarioPage> {
         arvoresCandidatas[i].dominante = true;
       }
     }
-    // Não precisa reordenar por ID aqui, pode causar inconsistência visual
   }
 
   String _getArvoreSubtitle(Arvore arvore) {
-    String statusPrincipal = arvore.status.name[0].toUpperCase() + arvore.status.name.substring(1);
-    String statusSecundario = arvore.status2 != null ? ' / ${arvore.status2!.name[0].toUpperCase() + arvore.status2!.name.substring(1)}' : '';
-    String altura = arvore.altura != null ? ' | Altura: ${arvore.altura!.toStringAsFixed(1)}m' : '';
+    String statusPrincipal =
+        arvore.status.name[0].toUpperCase() + arvore.status.name.substring(1);
+    String statusSecundario = arvore.status2 != null
+        ? ' / ${arvore.status2!.name[0].toUpperCase() + arvore.status2!.name.substring(1)}'
+        : '';
+    String altura = arvore.altura != null
+        ? ' | Altura: ${arvore.altura!.toStringAsFixed(1)}m'
+        : '';
     return '$statusPrincipal$statusSecundario$altura';
   }
 
@@ -224,56 +265,113 @@ class _InventarioPageState extends State<InventarioPage> {
         title: const Text('Coleta da Parcela'),
         actions: [
           if (_isSaving)
-            const Padding(padding: EdgeInsets.only(right: 16.0), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white))))
+            const Padding(
+              padding: EdgeInsets.only(right: 16.0),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+              ),
+            )
           else ...[
-            IconButton(icon: const Icon(Icons.save_outlined), tooltip: 'Salvar Progresso', onPressed: () => _salvarEstadoAtual()),
-            IconButton(icon: const Icon(Icons.check_circle_outline), tooltip: 'Concluir e Salvar Parcela', onPressed: _concluirColeta),
-          ]
+            IconButton(
+              icon: const Icon(Icons.save_outlined),
+              tooltip: 'Salvar Progresso',
+              onPressed: () => _salvarEstadoAtual(),
+            ),
+            IconButton(
+              icon: const Icon(Icons.check_circle_outline),
+              tooltip: 'Concluir e Salvar Parcela',
+              onPressed: _concluirColeta,
+            ),
+          ],
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                Padding(padding: const EdgeInsets.all(8.0), child: Card(elevation: 2, child: ListTile(
-                  leading: Icon(Icons.info_outline, color: Theme.of(context).primaryColor),
-                  title: Text('Talhão: ${widget.parcela.nomeTalhao} / Parcela: ${widget.parcela.idParcela}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('Árvores Coletadas: ${_arvoresColetadas.length}'),
-                ))),
-
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Card(
+                    elevation: 2,
+                    child: ListTile(
+                      leading: Icon(Icons.info_outline,
+                          color: Theme.of(context).primaryColor),
+                      title: Text(
+                        'Talhão: ${widget.parcela.nomeTalhao} / Parcela: ${widget.parcela.idParcela}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle:
+                          Text('Árvores Coletadas: ${_arvoresColetadas.length}'),
+                    ),
+                  ),
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed: () => setState(() {
-                        if (!_mostrandoApenasDominantes) _identificarArvoresDominantes();
-                        _mostrandoApenasDominantes = !_mostrandoApenasDominantes;
+                        if (!_mostrandoApenasDominantes) {
+                          _identificarArvoresDominantes();
+                        }
+                        _mostrandoApenasDominantes =
+                            !_mostrandoApenasDominantes;
                       }),
-                      icon: Icon(_mostrandoApenasDominantes ? Icons.filter_list_off : Icons.filter_list),
-                      label: Text(_mostrandoApenasDominantes ? 'Mostrar Todas' : 'Encontrar Dominantes'),
+                      icon: Icon(
+                        _mostrandoApenasDominantes
+                            ? Icons.filter_list_off
+                            : Icons.filter_list,
+                      ),
+                      label: Text(
+                        _mostrandoApenasDominantes
+                            ? 'Mostrar Todas'
+                            : 'Encontrar Dominantes',
+                      ),
                     ),
                   ),
                 ),
                 const Divider(height: 16),
                 Expanded(
                   child: _arvoresColetadas.isEmpty
-                      ? const Center(child: Text('Clique no botão "+" para adicionar a primeira árvore.', style: TextStyle(color: Colors.grey, fontSize: 16)))
+                      ? const Center(
+                          child: Text(
+                            'Clique no botão "+" para adicionar a primeira árvore.',
+                            style: TextStyle(color: Colors.grey, fontSize: 16),
+                          ),
+                        )
                       : ListView.builder(
                           itemCount: listaExibida.length,
                           itemBuilder: (context, index) {
                             final arvore = listaExibida[index];
                             return Card(
-                              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              color: arvore.dominante ? Colors.green.withAlpha(51) : null,
+                              margin: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              color: arvore.dominante
+                                  ? Colors.green.withAlpha(51)
+                                  : null,
                               child: ListTile(
                                 leading: CircleAvatar(
-                                  backgroundColor: arvore.dominante ? Colors.amber[700] : Theme.of(context).primaryColor,
-                                  child: arvore.dominante ? const Icon(Icons.star, color: Colors.white, size: 20) : Text('${arvore.posicaoNaLinha}', style: const TextStyle(color: Colors.white)),
+                                  backgroundColor: arvore.dominante
+                                      ? Colors.amber[700]
+                                      : Theme.of(context).primaryColor,
+                                  child: arvore.dominante
+                                      ? const Icon(Icons.star,
+                                          color: Colors.white, size: 20)
+                                      : Text(
+                                          '${arvore.posicaoNaLinha}',
+                                          style: const TextStyle(
+                                              color: Colors.white),
+                                        ),
                                 ),
-                                title: Text('L: ${arvore.linha} | CAP: ${arvore.cap.toStringAsFixed(1)} cm'),
+                                title: Text(
+                                    'L: ${arvore.linha} | CAP: ${arvore.cap.toStringAsFixed(1)} cm'),
                                 subtitle: Text(_getArvoreSubtitle(arvore)),
-                                trailing: const Icon(Icons.edit_outlined, color: Colors.grey),
+                                trailing: const Icon(Icons.edit_outlined,
+                                    color: Colors.grey),
                                 onTap: () => _abrirFormularioParaEditar(arvore),
                               ),
                             );

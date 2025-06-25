@@ -1,5 +1,3 @@
-// lib/pages/lista_coletas_page.dart (ou lista_atividades_page.dart)
-
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
@@ -21,7 +19,6 @@ class ListaColetasPage extends StatefulWidget {
 
 class _ListaColetasPageState extends State<ListaColetasPage> {
   final dbHelper = DatabaseHelper();
-
   late Future<Map<String, List<dynamic>>> _atividadesFuture;
 
   @override
@@ -45,43 +42,69 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
     };
   }
 
-  // --- MÉTODOS DE NAVEGAÇÃO E AÇÃO ---
+  // Navega para InventarioPage esperando um resultado
+  Future<void> _navegarParaInventario(Parcela parcela) async {
+    final bool? foiAtualizado = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => InventarioPage(parcela: parcela),
+      ),
+    );
 
-  void _navegarParaInventario(Parcela parcela) async {
-    await Navigator.push(context, MaterialPageRoute(builder: (context) => InventarioPage(parcela: parcela)));
+    // Atualiza a lista apenas se houve alguma alteração
+    if (foiAtualizado == true && mounted) {
+      await _carregarTodasAtividades();
+    }
+  }
+
+  Future<void> _navegarParaEdicaoParcela(Parcela parcela) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ColetaDadosPage(parcelaParaEditar: parcela),
+      ),
+    );
     _carregarTodasAtividades();
   }
 
-  void _navegarParaEdicaoParcela(Parcela parcela) async {
-    await Navigator.push(context, MaterialPageRoute(builder: (context) => ColetaDadosPage(parcelaParaEditar: parcela)));
-    _carregarTodasAtividades();
-  }
-
-  void _deletarParcela(Parcela parcela) async {
-    // Adicione uma lógica de confirmação se desejar
+  Future<void> _deletarParcela(Parcela parcela) async {
     await dbHelper.deleteParcela(parcela.dbId!);
     _carregarTodasAtividades();
   }
 
-  void _editarCubagem(CubagemArvore arvore) async {
-    // A tela de edição vai usar o método 'Relativas' como padrão, por exemplo.
-    // Você pode adaptar essa lógica se precisar distinguir
-    await Navigator.push(context, MaterialPageRoute(builder: (context) => CubagemDadosPage(metodo: 'Relativas', arvoreParaEditar: arvore)));
+  Future<void> _editarCubagem(CubagemArvore arvore) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CubagemDadosPage(
+          metodo: 'Relativas',
+          arvoreParaEditar: arvore,
+        ),
+      ),
+    );
     _carregarTodasAtividades();
   }
 
-  void _deletarCubagem(CubagemArvore cubagem) async {
-    // Adicione um diálogo de confirmação aqui se desejar
+  Future<void> _deletarCubagem(CubagemArvore cubagem) async {
     final confirmar = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Confirmar Exclusão'),
-          content: Text('Tem certeza que deseja apagar a cubagem "${cubagem.identificador}"? Essa ação não pode ser desfeita.'),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Apagar'), style: FilledButton.styleFrom(backgroundColor: Colors.red)),
-          ],
-        )
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmar Exclusão'),
+        content: Text(
+          'Tem certeza que deseja apagar a cubagem "${cubagem.identificador}"? Essa ação não pode ser desfeita.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Apagar'),
+          ),
+        ],
+      ),
     ) ?? false;
 
     if (confirmar) {
@@ -89,8 +112,6 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
       _carregarTodasAtividades();
     }
   }
-
-  // --- WIDGET BUILDERS PARA CADA TIPO DE ITEM ---
 
   Widget _buildParcelaCard(Parcela parcela) {
     final isConcluida = parcela.status == StatusParcela.concluida;
@@ -100,7 +121,7 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
         motion: const StretchMotion(),
         children: [
           SlidableAction(
-            onPressed: (context) => _navegarParaEdicaoParcela(parcela),
+            onPressed: (_) => _navegarParaEdicaoParcela(parcela),
             backgroundColor: Colors.blueAccent,
             foregroundColor: Colors.white,
             icon: Icons.edit_note,
@@ -112,7 +133,7 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
         motion: const StretchMotion(),
         children: [
           SlidableAction(
-            onPressed: (context) => _deletarParcela(parcela),
+            onPressed: (_) => _deletarParcela(parcela),
             backgroundColor: Colors.redAccent,
             foregroundColor: Colors.white,
             icon: Icons.delete_outline,
@@ -123,9 +144,17 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: ListTile(
-          leading: Icon(isConcluida ? Icons.check_circle_outline : Icons.timelapse_outlined, color: isConcluida ? Colors.green : Colors.orange),
-          title: Text('${parcela.nomeFazenda} - Talhão ${parcela.nomeTalhao}', style: const TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text('Parcela ${parcela.idParcela} | ${DateFormat('dd/MM/yy HH:mm').format(parcela.dataColeta!)}'),
+          leading: Icon(
+            isConcluida ? Icons.check_circle_outline : Icons.timelapse_outlined,
+            color: isConcluida ? Colors.green : Colors.orange,
+          ),
+          title: Text(
+            '${parcela.nomeFazenda} - Talhão ${parcela.nomeTalhao}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            'Parcela ${parcela.idParcela} | ${DateFormat('dd/MM/yy HH:mm').format(parcela.dataColeta!)}',
+          ),
           trailing: const Icon(Icons.arrow_forward_ios, size: 14),
           onTap: () => _navegarParaInventario(parcela),
         ),
@@ -133,7 +162,6 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
     );
   }
 
-  // <<< CARD DE CUBAGEM ATUALIZADO AQUI
   Widget _buildCubagemCard(CubagemArvore cubagem) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -141,8 +169,13 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
         children: [
           ListTile(
             leading: const Icon(Icons.straighten, color: Colors.brown),
-            title: Text(cubagem.identificador, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('Altura: ${cubagem.alturaTotal}m, CAP/DAP: ${cubagem.valorCAP}cm'),
+            title: Text(
+              cubagem.identificador,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              'Altura: ${cubagem.alturaTotal}m, CAP/DAP: ${cubagem.valorCAP}cm',
+            ),
             onTap: () => _editarCubagem(cubagem),
           ),
           const Divider(height: 1, indent: 16, endIndent: 16),
@@ -151,17 +184,24 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                TextButton.icon(icon: const Icon(Icons.edit, size: 18), label: const Text('Editar'), onPressed: () => _editarCubagem(cubagem)),
-                // O BOTÃO DE EXPORTAR INDIVIDUAL FOI REMOVIDO DAQUI
-                TextButton.icon(icon: const Icon(Icons.delete, size: 18), label: const Text('Apagar'), style: TextButton.styleFrom(foregroundColor: Colors.red), onPressed: () => _deletarCubagem(cubagem)),
+                TextButton.icon(
+                  icon: const Icon(Icons.edit, size: 18),
+                  label: const Text('Editar'),
+                  onPressed: () => _editarCubagem(cubagem),
+                ),
+                TextButton.icon(
+                  icon: const Icon(Icons.delete, size: 18),
+                  label: const Text('Apagar'),
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  onPressed: () => _deletarCubagem(cubagem),
+                ),
               ],
             ),
-          )
+          ),
         ],
       ),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -178,7 +218,9 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
               return const Center(child: CircularProgressIndicator());
             }
             if (snapshot.hasError) {
-              return Center(child: Text('Erro ao carregar dados: ${snapshot.error}'));
+              return Center(
+                child: Text('Erro ao carregar dados: ${snapshot.error}'),
+              );
             }
 
             final parcelas = snapshot.data?['parcelas'] as List<Parcela>? ?? [];
@@ -194,7 +236,10 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      child: Text('Coletas de Parcela', style: Theme.of(context).textTheme.titleLarge),
+                      child: Text(
+                        'Coletas de Parcela',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
                     ),
                   ),
                   SliverList(
@@ -208,7 +253,10 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-                      child: Text('Cubagens Rigorosas', style: Theme.of(context).textTheme.titleLarge),
+                      child: Text(
+                        'Cubagens Rigorosas',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
                     ),
                   ),
                   SliverList(
@@ -223,7 +271,6 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
           },
         ),
       ),
-      // <<< SPEED DIAL ATUALIZADO AQUI
       floatingActionButton: SpeedDial(
         icon: Icons.add,
         activeIcon: Icons.close,
@@ -240,14 +287,30 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
                   title: const Text('Escolha o Método'),
                   content: const Text('Como as seções serão medidas?'),
                   actions: [
-                    TextButton(child: const Text('SEÇÕES FIXAS'), onPressed: () {
-                      Navigator.of(ctx).pop();
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const CubagemDadosPage(metodo: 'Fixas'))).then((_) => _carregarTodasAtividades());
-                    }),
-                    TextButton(child: const Text('SEÇÕES RELATIVAS'), onPressed: () {
-                      Navigator.of(ctx).pop();
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const CubagemDadosPage(metodo: 'Relativas'))).then((_) => _carregarTodasAtividades());
-                    }),
+                    TextButton(
+                      child: const Text('SEÇÕES FIXAS'),
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const CubagemDadosPage(metodo: 'Fixas'),
+                          ),
+                        ).then((_) => _carregarTodasAtividades());
+                      },
+                    ),
+                    TextButton(
+                      child: const Text('SEÇÕES RELATIVAS'),
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const CubagemDadosPage(metodo: 'Relativas'),
+                          ),
+                        ).then((_) => _carregarTodasAtividades());
+                      },
+                    ),
                   ],
                 ),
               );
@@ -257,7 +320,10 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
             child: const Icon(Icons.forest),
             label: 'Nova Coleta de Parcela',
             onTap: () {
-              Navigator.push(context, MaterialPageRoute(builder: (context) => const ColetaDadosPage())).then((_) => _carregarTodasAtividades());
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ColetaDadosPage()),
+              ).then((_) => _carregarTodasAtividades());
             },
           ),
         ],

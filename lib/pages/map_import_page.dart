@@ -244,7 +244,7 @@ class _MapImportPageState extends State<MapImportPage> {
                             builder: (context) => ColetaDadosPage(
                               nomeFazendaInicial: mapProvider.farmName,
                               nomeTalhaoInicial: mapProvider.blockName,
-                              idParcelaInicial: samplePoint.id,
+                              idParcelaInicial: samplePoint.id
                             ),
                           ),
                         );

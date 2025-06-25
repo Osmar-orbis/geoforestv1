@@ -1,5 +1,3 @@
-// lib/helpers/database_helper.dart (VERSÃO COMPLETA E FINAL - COM CORREÇÕES)
-
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
@@ -45,24 +43,74 @@ class DatabaseHelper {
     return await openDatabase(
       join(await getDatabasesPath(), 'geoforestcoletor.db'),
       version: 8,
+      onConfigure: _onConfigure, // Habilita chaves estrangeiras
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
   }
 
+  // Habilita a checagem de chaves estrangeiras (foreign keys)
+  Future<void> _onConfigure(Database db) async {
+    await db.execute('PRAGMA foreign_keys = ON');
+  }
+
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
-      CREATE TABLE parcelas (id INTEGER PRIMARY KEY AUTOINCREMENT, nomeFazenda TEXT NOT NULL, nomeTalhao TEXT NOT NULL, idParcela TEXT NOT NULL, areaMetrosQuadrados REAL NOT NULL, espacamento TEXT, observacao TEXT, latitude REAL, longitude REAL, dataColeta TEXT NOT NULL, status TEXT NOT NULL, exportada INTEGER DEFAULT 0 NOT NULL)
+      CREATE TABLE parcelas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nomeFazenda TEXT NOT NULL,
+        nomeTalhao TEXT NOT NULL,
+        idParcela TEXT NOT NULL,
+        areaMetrosQuadrados REAL NOT NULL,
+        espacamento TEXT,
+        observacao TEXT,
+        latitude REAL,
+        longitude REAL,
+        dataColeta TEXT NOT NULL,
+        status TEXT NOT NULL,
+        exportada INTEGER DEFAULT 0 NOT NULL
+      )
     ''');
     await db.execute('''
-      CREATE TABLE arvores (id INTEGER PRIMARY KEY AUTOINCREMENT, parcelaId INTEGER NOT NULL, cap REAL NOT NULL, altura REAL, linha INTEGER NOT NULL, posicaoNaLinha INTEGER NOT NULL, fimDeLinha INTEGER NOT NULL, dominante INTEGER NOT NULL, status TEXT NOT NULL, status2 TEXT, FOREIGN KEY (parcelaId) REFERENCES parcelas (id) ON DELETE CASCADE)
+      CREATE TABLE arvores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parcelaId INTEGER NOT NULL,
+        cap REAL NOT NULL,
+        altura REAL,
+        linha INTEGER NOT NULL,
+        posicaoNaLinha INTEGER NOT NULL,
+        fimDeLinha INTEGER NOT NULL,
+        dominante INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        status2 TEXT,
+        FOREIGN KEY (parcelaId) REFERENCES parcelas (id) ON DELETE CASCADE
+      )
     ''');
     await db.execute('''
-      CREATE TABLE cubagens_arvores(id INTEGER PRIMARY KEY AUTOINCREMENT, identificador TEXT NOT NULL, alturaTotal REAL NOT NULL, tipoMedidaCAP TEXT NOT NULL, valorCAP REAL NOT NULL, alturaBase REAL NOT NULL, classe TEXT)
+      CREATE TABLE cubagens_arvores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        identificador TEXT NOT NULL,
+        alturaTotal REAL NOT NULL,
+        tipoMedidaCAP TEXT NOT NULL,
+        valorCAP REAL NOT NULL,
+        alturaBase REAL NOT NULL,
+        classe TEXT
+      )
     ''');
     await db.execute('''
-      CREATE TABLE cubagens_secoes(id INTEGER PRIMARY KEY AUTOINCREMENT, cubagemArvoreId INTEGER NOT NULL, alturaMedicao REAL NOT NULL, circunferencia REAL, casca1_mm REAL, casca2_mm REAL, FOREIGN KEY (cubagemArvoreId) REFERENCES cubagens_arvores (id) ON DELETE CASCADE)
+      CREATE TABLE cubagens_secoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cubagemArvoreId INTEGER NOT NULL,
+        alturaMedicao REAL NOT NULL,
+        circunferencia REAL,
+        casca1_mm REAL,
+        casca2_mm REAL,
+        FOREIGN KEY (cubagemArvoreId) REFERENCES cubagens_arvores (id) ON DELETE CASCADE
+      )
     ''');
+    // Índices para performance
+    await db.execute('CREATE INDEX idx_arvores_parcelaId ON arvores(parcelaId)');
+    await db.execute('CREATE INDEX idx_cubagens_secoes_cubagemArvoreId ON cubagens_secoes(cubagemArvoreId)');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -75,6 +123,7 @@ class DatabaseHelper {
     if (oldVersion < 8) {
       await db.execute('DROP TABLE IF EXISTS cubagens_secoes');
       await db.execute('''CREATE TABLE cubagens_secoes(id INTEGER PRIMARY KEY AUTOINCREMENT, cubagemArvoreId INTEGER NOT NULL, alturaMedicao REAL NOT NULL, circunferencia REAL, casca1_mm REAL, casca2_mm REAL, FOREIGN KEY (cubagemArvoreId) REFERENCES cubagens_arvores (id) ON DELETE CASCADE)''');
+      await db.execute('CREATE INDEX idx_cubagens_secoes_cubagemArvoreId ON cubagens_secoes(cubagemArvoreId)');
     }
   }
 
@@ -163,13 +212,13 @@ class DatabaseHelper {
       final nomesAjudantes = prefs.getString('nomes_ajudantes') ?? 'N/A';
       final nomeZona = prefs.getString('zona_utm_selecionada') ?? 'SIRGAS 2000 / UTM Zona 22S';
       final codigoEpsg = zonasUtmSirgas2000[nomeZona]!;
-      
+
       final projWGS84 = proj4.Projection.get('EPSG:4326')!;
       final projUTM = proj4.Projection.get('EPSG:$codigoEpsg')!;
-      
+
       List<List<dynamic>> rows = [];
       rows.add([ 'Lider_Equipe', 'Ajudantes', 'ID_Db_Parcela', 'Fazenda', 'Talhao', 'ID_Coleta_Parcela', 'Area_m2', 'Espacamento', 'Observacao_Parcela', 'Easting', 'Northing', 'Data_Coleta', 'Status_Parcela', 'Linha', 'Posicao_na_Linha', 'Fuste_Num', 'Status_Arvore', 'Status_Arvore_2', 'CAP_cm', 'Altura_m', 'Dominante' ]);
-      
+
       List<int> idsParaMarcar = [];
 
       for (var parcelaMap in parcelasMaps) {
@@ -198,7 +247,7 @@ class DatabaseHelper {
       final nomePastaData = DateFormat('yyyy-MM-dd').format(hoje);
       final pastaDoDia = Directory('${directory.path}/$nomePastaData');
       if (!await pastaDoDia.exists()) await pastaDoDia.create(recursive: true);
-      
+
       final fileName = 'geoforest_export_parcelas_${DateFormat('HH-mm-ss').format(hoje)}.csv';
       final path = '${pastaDoDia.path}/$fileName';
       await File(path).writeAsString(const ListToCsvConverter().convert(rows));
@@ -265,7 +314,7 @@ class DatabaseHelper {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhuma cubagem para exportar.')));
       return;
     }
-    
+
     List<List<dynamic>> rows = [];
     rows.add(['id_arvore_db', 'identificador_arvore', 'altura_total_m', 'cap_cm', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
 
@@ -295,10 +344,10 @@ class DatabaseHelper {
       if (!await pastaDoDia.exists()) {
         await pastaDoDia.create(recursive: true);
       }
-      
+
       final fileName = 'geoforest_export_cubagens_${DateFormat('HH-mm-ss').format(hoje)}.csv';
       final path = '${pastaDoDia.path}/$fileName';
-      
+
       final csvData = const ListToCsvConverter().convert(rows);
       await File(path).writeAsString(csvData);
 
@@ -350,11 +399,11 @@ class DatabaseHelper {
       if (!await pastaDoDia.exists()) {
         await pastaDoDia.create(recursive: true);
       }
-      
+
       final sanitizedId = arvore.identificador.replaceAll(RegExp(r'[\\/*?:"<>|]'), '_');
       final fileName = 'Cubagem_${sanitizedId}_${DateFormat('HH-mm-ss').format(hoje)}.csv';
       final path = '${pastaDoDia.path}/$fileName';
-      
+
       await File(path).writeAsString(csvData);
 
       if (context.mounted) {
