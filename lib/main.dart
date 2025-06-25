@@ -12,10 +12,10 @@ import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'package:geoforestcoletor/providers/map_provider.dart';
 import 'package:geoforestcoletor/controller/login_controller.dart';
-import 'package:geoforestcoletor/pages/home_page.dart';
-import 'package:geoforestcoletor/pages/login_page.dart';
-import 'package:geoforestcoletor/pages/map_import_page.dart';
-import 'package:geoforestcoletor/pages/equipe_page.dart';
+import 'package:geoforestcoletor/pages/menu/home_page.dart';
+import 'package:geoforestcoletor/pages/menu/login_page.dart';
+import 'package:geoforestcoletor/pages/menu/map_import_page.dart';
+import 'package:geoforestcoletor/pages/menu/equipe_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

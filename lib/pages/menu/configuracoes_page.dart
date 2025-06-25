@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:geoforestcoletor/helpers/database_helper.dart';
+import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
 
 // Mapeamento de zonas, pode ficar aqui para ser usado no Dropdown.
 const Map<String, int> zonasUtmSirgas2000 = {

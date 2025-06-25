@@ -1,25 +1,20 @@
-// lib/pages/home_page.dart
+// lib/pages/menu/home_page.dart
 
 import 'package:flutter/material.dart';
-import 'package:geoforestcoletor/helpers/database_helper.dart';
-import 'package:geoforestcoletor/pages/coleta_dados_page.dart';
-import 'package:geoforestcoletor/pages/configuracoes_page.dart';
-import 'package:geoforestcoletor/pages/lista_coletas_page.dart';
-import 'package:geoforestcoletor/pages/sobre_page.dart';
+import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
+import 'package:geoforestcoletor/pages/amostra/coleta_dados_page.dart';
+import 'package:geoforestcoletor/pages/menu/configuracoes_page.dart';
+import 'package:geoforestcoletor/pages/amostra/lista_coletas_page.dart';
+import 'package:geoforestcoletor/pages/menu/sobre_page.dart';
 import 'package:geoforestcoletor/widgets/menu_card.dart';
-// Removi o import do url_launcher, pois a função que o usava foi substituída.
-// import 'package:url_launcher/url_launcher.dart';
+import 'package:geoforestcoletor/models/parcela_model.dart'; // <<< 1. IMPORT NECESSÁRIO
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key, required this.title});
   final String title;
 
-  // A função _abrirNavegacao não é mais necessária, mas pode ser mantida se quiser.
-  // void _abrirNavegacao(BuildContext context) async { ... }
-  
   void _mostrarDialogoExportacao(BuildContext context) {
     final dbHelper = DatabaseHelper();
-
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -57,20 +52,40 @@ class HomePage extends StatelessWidget {
           mainAxisSpacing: 12.0,
           childAspectRatio: 1.0,
           children: [
-            
-            // =============================================================
-            // =================== ALTERAÇÃO FEITA AQUI ====================
-            // =============================================================
-            // O antigo card "Navegação" foi substituído por este:
             MenuCard(
-              icon: Icons.explore_outlined, // Um ícone mais adequado
+              icon: Icons.explore_outlined,
               label: 'Navegação', 
-              onTap: () => Navigator.pushNamed(context, '/map_import'), // Navega para a nova rota
+              onTap: () => Navigator.pushNamed(context, '/map_import'),
             ),
-            // =============================================================
+            
+            // =========================================================================
+            // ======================== CORREÇÃO APLICADA AQUI =========================
+            // =========================================================================
+            MenuCard(
+              icon: Icons.add_location_alt_outlined,
+              label: 'Nova Coleta',
+              onTap: () {
+                // 1. Cria um objeto Parcela "vazio" com os valores mínimos necessários.
+                final novaParcelaAvulsa = Parcela(
+                  nomeFazenda: '', 
+                  nomeTalhao: '', 
+                  idParcela: '', 
+                  areaMetrosQuadrados: 0, 
+                  status: StatusParcela.pendente // O status 'pendente' indica uma nova entrada
+                );
 
-            // O resto dos seus cards permanece exatamente igual
-            MenuCard(icon: Icons.add_location_alt_outlined, label: 'Nova Coleta', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ColetaDadosPage()))),
+                // 2. Navega para a ColetaDadosPage, passando a parcela "vazia" para ser preenchida.
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    // Remove o 'const'
+                    builder: (context) => ColetaDadosPage(parcelaParaEditar: novaParcelaAvulsa),
+                  ),
+                );
+              },
+            ),
+            // =========================================================================
+            
             MenuCard(icon: Icons.checklist_rtl_outlined, label: 'Painel de Coletas', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ListaColetasPage(title: 'Painel de Coletas')))),
             MenuCard(
               icon: Icons.upload_file_outlined,

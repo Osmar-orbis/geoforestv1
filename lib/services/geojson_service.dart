@@ -1,38 +1,32 @@
-// lib/services/geojson_service.dart (VERSÃO ATUALIZADA COM PEDIDO DE PERMISSÃO MODERNO)
+// lib/services/geojson_service.dart
 
 import 'dart:convert';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geoforestcoletor/models/sample_point.dart'; // <<< IMPORT NECESSÁRIO
 import 'package:latlong2/latlong.dart';
-import 'package:permission_handler/permission_handler.dart'; // Import necessário
+import 'package:permission_handler/permission_handler.dart';
 
 class GeoJsonService {
-  Future<List<Polygon>> importAndParseGeoJson() async {
-    // =======================================================================
-    // ============ PEDIDO DE PERMISSÃO ATUALIZADO (FORMA MODERNA) =============
-    // =======================================================================
-    // Esta abordagem é mais compatível com Android 13+
+  // =========================================================================
+  // =========== MÉTODO ATUALIZADO PARA RETORNAR POLÍGONOS E PONTOS ==========
+  // =========================================================================
+  Future<Map<String, dynamic>> importAndParseGeoJson() async {
     var photosStatus = await Permission.photos.status;
     var videosStatus = await Permission.videos.status;
 
-    if (!photosStatus.isGranted) {
-      photosStatus = await Permission.photos.request();
-    }
-    if (!videosStatus.isGranted) {
-      videosStatus = await Permission.videos.request();
-    }
+    if (!photosStatus.isGranted) photosStatus = await Permission.photos.request();
+    if (!videosStatus.isGranted) videosStatus = await Permission.videos.request();
 
-    // Se o usuário negou alguma das permissões de mídia, tentamos o 'storage' como um fallback.
     if (!photosStatus.isGranted && !videosStatus.isGranted) {
       var storageStatus = await Permission.storage.request();
       if (!storageStatus.isGranted) {
         print("ERRO: Permissão de acesso a mídias/arquivos foi negada.");
-        return [];
+        return {'polygons': [], 'points': []};
       }
     }
-    // =======================================================================
 
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -41,7 +35,7 @@ class GeoJsonService {
 
     if (result == null || result.files.single.path == null) {
       print("DEBUG: Nenhum arquivo selecionado.");
-      return [];
+      return {'polygons': [], 'points': []};
     }
 
     try {
@@ -51,24 +45,25 @@ class GeoJsonService {
 
       if (fileContent.isEmpty) {
         print("ERRO: O conteúdo do arquivo está vazio!");
-        return [];
+        return {'polygons': [], 'points': []};
       }
-      print("DEBUG: Conteúdo do arquivo lido com sucesso. Tamanho: ${fileContent.length} caracteres.");
-
+      
       final geoJsonData = json.decode(fileContent);
 
-      print("DEBUG: JSON decodificado com sucesso!");
       if (geoJsonData['features'] == null) {
         print("ERRO: O JSON não contém a chave 'features'.");
-        return [];
+        return {'polygons': [], 'points': []};
       }
-      print("DEBUG: Encontradas ${geoJsonData['features'].length} features.");
 
       final List<Polygon> polygons = [];
+      final List<SamplePoint> samplePoints = []; // <<< LISTA PARA GUARDAR OS PONTOS
 
       for (var feature in geoJsonData['features']) {
         final geometry = feature['geometry'];
+        final properties = feature['properties'] ?? {};
+        
         if (geometry != null) {
+          // Lógica para Polígonos (sem alterações)
           if (geometry['type'] == 'Polygon') {
             final List<LatLng> points = [];
             for (var point in geometry['coordinates'][0]) {
@@ -84,16 +79,30 @@ class GeoJsonService {
               polygons.add(_createPolygon(points));
             }
           }
+          // =========================================================================
+          // =================== LÓGICA PARA IMPORTAR PONTOS (PLOTS) =================
+          // =========================================================================
+          else if (geometry['type'] == 'Point' && properties['type'] == 'plot') {
+            samplePoints.add(SamplePoint(
+              id: properties['id'] ?? 0,
+              position: LatLng(geometry['coordinates'][1].toDouble(), geometry['coordinates'][0].toDouble()),
+              status: SampleStatus.values.firstWhere((e) => e.name == properties['status'], orElse: () => SampleStatus.untouched),
+            ));
+          }
         }
       }
 
-      print("DEBUG: Processamento concluído. ${polygons.length} polígonos criados.");
-      return polygons;
+      print("DEBUG: Processamento concluído. ${polygons.length} polígonos e ${samplePoints.length} pontos criados.");
+      // Retorna um mapa contendo ambas as listas
+      return {
+        'polygons': polygons,
+        'points': samplePoints,
+      };
 
     } catch (e, s) {
       debugPrint("ERRO CRÍTICO: $e");
       debugPrint("Stacktrace: $s");
-      return [];
+      return {'polygons': [], 'points': []};
     }
   }
 

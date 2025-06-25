@@ -1,3 +1,5 @@
+// lib/data/datasources/local/database_helper.dart
+
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
@@ -42,14 +44,13 @@ class DatabaseHelper {
     });
     return await openDatabase(
       join(await getDatabasesPath(), 'geoforestcoletor.db'),
-      version: 8,
-      onConfigure: _onConfigure, // Habilita chaves estrangeiras
+      version: 9, // <<< VERSÃO INCREMENTADA
+      onConfigure: _onConfigure,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
   }
 
-  // Habilita a checagem de chaves estrangeiras (foreign keys)
   Future<void> _onConfigure(Database db) async {
     await db.execute('PRAGMA foreign_keys = ON');
   }
@@ -68,7 +69,11 @@ class DatabaseHelper {
         longitude REAL,
         dataColeta TEXT NOT NULL,
         status TEXT NOT NULL,
-        exportada INTEGER DEFAULT 0 NOT NULL
+        exportada INTEGER DEFAULT 0 NOT NULL,
+        idFazenda TEXT, 
+        largura REAL,
+        comprimento REAL,
+        raio REAL
       )
     ''');
     await db.execute('''
@@ -108,26 +113,73 @@ class DatabaseHelper {
         FOREIGN KEY (cubagemArvoreId) REFERENCES cubagens_arvores (id) ON DELETE CASCADE
       )
     ''');
-    // Índices para performance
     await db.execute('CREATE INDEX idx_arvores_parcelaId ON arvores(parcelaId)');
     await db.execute('CREATE INDEX idx_cubagens_secoes_cubagemArvoreId ON cubagens_secoes(cubagemArvoreId)');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 4) { try { await db.execute('ALTER TABLE arvores ADD COLUMN status2 TEXT'); } catch (e) { /* ignora */ } }
+    // Migração para criar a tabela 'arvores' se ela não existir em versões muito antigas
+    if (oldVersion < 2) { 
+        await db.execute('''
+          CREATE TABLE arvores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            parcelaId INTEGER NOT NULL,
+            cap REAL NOT NULL,
+            altura REAL,
+            linha INTEGER NOT NULL,
+            posicaoNaLinha INTEGER NOT NULL,
+            fimDeLinha INTEGER NOT NULL,
+            dominante INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            FOREIGN KEY (parcelaId) REFERENCES parcelas (id) ON DELETE CASCADE
+          )
+        ''');
+    }
+    if (oldVersion < 4) { try { await db.execute('ALTER TABLE arvores ADD COLUMN status2 TEXT'); } catch (e) { print(e); } }
     if (oldVersion < 5) { await db.execute('DROP TABLE IF EXISTS fustes'); }
     if (oldVersion < 6) { await db.execute('ALTER TABLE parcelas ADD COLUMN exportada INTEGER DEFAULT 0 NOT NULL'); }
-    if (oldVersion < 7) {
-      await db.execute('''CREATE TABLE cubagens_arvores(id INTEGER PRIMARY KEY AUTOINCREMENT, identificador TEXT NOT NULL, alturaTotal REAL NOT NULL, tipoMedidaCAP TEXT NOT NULL, valorCAP REAL NOT NULL, alturaBase REAL NOT NULL, classe TEXT)''');
-    }
+    if (oldVersion < 7) { await db.execute('''CREATE TABLE cubagens_arvores(id INTEGER PRIMARY KEY AUTOINCREMENT, identificador TEXT NOT NULL, alturaTotal REAL NOT NULL, tipoMedidaCAP TEXT NOT NULL, valorCAP REAL NOT NULL, alturaBase REAL NOT NULL, classe TEXT)'''); }
     if (oldVersion < 8) {
       await db.execute('DROP TABLE IF EXISTS cubagens_secoes');
       await db.execute('''CREATE TABLE cubagens_secoes(id INTEGER PRIMARY KEY AUTOINCREMENT, cubagemArvoreId INTEGER NOT NULL, alturaMedicao REAL NOT NULL, circunferencia REAL, casca1_mm REAL, casca2_mm REAL, FOREIGN KEY (cubagemArvoreId) REFERENCES cubagens_arvores (id) ON DELETE CASCADE)''');
       await db.execute('CREATE INDEX idx_cubagens_secoes_cubagemArvoreId ON cubagens_secoes(cubagemArvoreId)');
     }
+    if (oldVersion < 9) {
+      try { await db.execute('ALTER TABLE parcelas ADD COLUMN idFazenda TEXT'); } catch (e) { print(e); }
+      try { await db.execute('ALTER TABLE parcelas ADD COLUMN largura REAL'); } catch (e) { print(e); }
+      try { await db.execute('ALTER TABLE parcelas ADD COLUMN comprimento REAL'); } catch (e) { print(e); }
+      try { await db.execute('ALTER TABLE parcelas ADD COLUMN raio REAL'); } catch (e) { print(e); }
+    }
   }
 
-  // --- MÉTODOS DE PARCELA E ARVORE ---
+  Future<void> saveBatchParcelas(List<Parcela> parcelas) async {
+    final db = await database;
+    final batch = db.batch();
+    for (final parcela in parcelas) {
+      batch.insert('parcelas', parcela.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<Parcela>> getParcelasByProject(String nomeFazenda, String nomeTalhao) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'parcelas',
+      where: 'nomeFazenda = ? AND nomeTalhao = ?',
+      whereArgs: [nomeFazenda, nomeTalhao],
+    );
+    return List.generate(maps.length, (i) => Parcela.fromMap(maps[i]));
+  }
+
+  Future<Parcela?> getParcelaById(int id) async {
+    final db = await database;
+    final maps = await db.query('parcelas', where: 'id = ?', whereArgs: [id]);
+    if (maps.isNotEmpty) {
+      return Parcela.fromMap(maps.first);
+    }
+    return null;
+  }
+
   Future<Parcela> saveFullColeta(Parcela parcela, List<Arvore> arvores) async {
     final db = await database;
     await db.transaction((txn) async {
@@ -189,7 +241,6 @@ class DatabaseHelper {
         ],
       ),
     );
-
     if (tipoExportacao == null || tipoExportacao == 'cancelar') return;
 
     final db = await database;
@@ -206,7 +257,7 @@ class DatabaseHelper {
 
     try {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gerando arquivo CSV de parcelas...')));
-
+      
       final prefs = await SharedPreferences.getInstance();
       final nomeLider = prefs.getString('nome_lider') ?? 'N/A';
       final nomesAjudantes = prefs.getString('nomes_ajudantes') ?? 'N/A';
@@ -217,10 +268,9 @@ class DatabaseHelper {
       final projUTM = proj4.Projection.get('EPSG:$codigoEpsg')!;
 
       List<List<dynamic>> rows = [];
-      rows.add([ 'Lider_Equipe', 'Ajudantes', 'ID_Db_Parcela', 'Fazenda', 'Talhao', 'ID_Coleta_Parcela', 'Area_m2', 'Espacamento', 'Observacao_Parcela', 'Easting', 'Northing', 'Data_Coleta', 'Status_Parcela', 'Linha', 'Posicao_na_Linha', 'Fuste_Num', 'Status_Arvore', 'Status_Arvore_2', 'CAP_cm', 'Altura_m', 'Dominante' ]);
+      rows.add([ 'Lider_Equipe', 'Ajudantes', 'ID_Db_Parcela', 'Codigo_Fazenda', 'Fazenda', 'Talhao', 'ID_Coleta_Parcela', 'Area_m2', 'Largura_m', 'Comprimento_m', 'Raio_m', 'Espacamento', 'Observacao_Parcela', 'Easting', 'Northing', 'Data_Coleta', 'Status_Parcela', 'Linha', 'Posicao_na_Linha', 'Fuste_Num', 'Status_Arvore', 'Status_Arvore_2', 'CAP_cm', 'Altura_m', 'Dominante' ]);
 
       List<int> idsParaMarcar = [];
-
       for (var parcelaMap in parcelasMaps) {
         idsParaMarcar.add(parcelaMap['id'] as int);
         String easting = '', northing = '';
@@ -231,13 +281,13 @@ class DatabaseHelper {
         }
         final List<Arvore> arvores = await getArvoresDaParcela(parcelaMap['id'] as int);
         if (arvores.isEmpty) {
-          rows.add([ nomeLider, nomesAjudantes, parcelaMap['id'], parcelaMap['nomeFazenda'], parcelaMap['nomeTalhao'], parcelaMap['idParcela'], parcelaMap['areaMetrosQuadrados'], parcelaMap['espacamento'], parcelaMap['observacao'], easting, northing, parcelaMap['dataColeta'], parcelaMap['status'], null, null, null, null, null, null, null, null ]);
+          rows.add([ nomeLider, nomesAjudantes, parcelaMap['id'], parcelaMap['idFazenda'], parcelaMap['nomeFazenda'], parcelaMap['nomeTalhao'], parcelaMap['idParcela'], parcelaMap['areaMetrosQuadrados'], parcelaMap['largura'], parcelaMap['comprimento'], parcelaMap['raio'], parcelaMap['espacamento'], parcelaMap['observacao'], easting, northing, parcelaMap['dataColeta'], parcelaMap['status'], null, null, null, null, null, null, null, null ]);
         } else {
           Map<String, int> fusteCounter = {};
           for (final arvore in arvores) {
             String posKey = '${arvore.linha}-${arvore.posicaoNaLinha}';
             fusteCounter[posKey] = (fusteCounter[posKey] ?? 0) + 1;
-            rows.add([ nomeLider, nomesAjudantes, parcelaMap['id'], parcelaMap['nomeFazenda'], parcelaMap['nomeTalhao'], parcelaMap['idParcela'], parcelaMap['areaMetrosQuadrados'], parcelaMap['espacamento'], parcelaMap['observacao'], easting, northing, parcelaMap['dataColeta'], parcelaMap['status'], arvore.linha, arvore.posicaoNaLinha, fusteCounter[posKey], arvore.status.name, arvore.status2?.name, arvore.cap, arvore.altura, arvore.dominante ? 'Sim' : 'Não' ]);
+            rows.add([ nomeLider, nomesAjudantes, parcelaMap['id'], parcelaMap['idFazenda'], parcelaMap['nomeFazenda'], parcelaMap['nomeTalhao'], parcelaMap['idParcela'], parcelaMap['areaMetrosQuadrados'], parcelaMap['largura'], parcelaMap['comprimento'], parcelaMap['raio'], parcelaMap['espacamento'], parcelaMap['observacao'], easting, northing, parcelaMap['dataColeta'], parcelaMap['status'], arvore.linha, arvore.posicaoNaLinha, fusteCounter[posKey], arvore.status.name, arvore.status2?.name, arvore.cap, arvore.altura, arvore.dominante ? 'Sim' : 'Não' ]);
           }
         }
       }
@@ -255,7 +305,6 @@ class DatabaseHelper {
       if (tipoExportacao == 'nao_exportadas') {
          await db.update('parcelas', {'exportada': 1}, where: 'id IN (${idsParaMarcar.map((_) => '?').join(',')})', whereArgs: idsParaMarcar);
       }
-
       if (context.mounted) {
         ScaffoldMessenger.of(context).removeCurrentSnackBar();
         await Share.shareXFiles([XFile(path)], subject: 'Exportação GeoForest');
@@ -264,6 +313,13 @@ class DatabaseHelper {
       debugPrint('Erro na exportação de parcelas: $e\n$s');
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Falha na exportação: ${e.toString()}'), backgroundColor: Colors.red));
     }
+  }
+
+  Future<int> limparParcelasExportadas() async {
+    final db = await database;
+    final count = await db.delete('parcelas', where: 'exportada = ?', whereArgs: [1]);
+    debugPrint('$count parcelas exportadas foram apagadas.');
+    return count;
   }
 
   // --- MÉTODOS DE CUBAGEM ---
@@ -317,40 +373,28 @@ class DatabaseHelper {
 
     List<List<dynamic>> rows = [];
     rows.add(['id_arvore_db', 'identificador_arvore', 'altura_total_m', 'cap_cm', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
-
     for (var arvore in arvores) {
       final secoes = await getSecoesPorArvoreId(arvore.id!);
       if (secoes.isEmpty) {
          rows.add([arvore.id, arvore.identificador, arvore.alturaTotal, arvore.valorCAP, null, null, null, null, null, null]);
       } else {
         for (var secao in secoes) {
-          rows.add([
-            arvore.id, arvore.identificador, arvore.alturaTotal, arvore.valorCAP,
-            secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm,
-            secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2),
-          ]);
+          rows.add([ arvore.id, arvore.identificador, arvore.alturaTotal, arvore.valorCAP, secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm, secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2) ]);
         }
       }
     }
 
     try {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gerando arquivo CSV de cubagens...')));
-
       final directory = await getApplicationDocumentsDirectory();
       final hoje = DateTime.now();
       final nomePastaData = DateFormat('yyyy-MM-dd').format(hoje);
       final pastaDoDia = Directory('${directory.path}/$nomePastaData');
-
-      if (!await pastaDoDia.exists()) {
-        await pastaDoDia.create(recursive: true);
-      }
-
+      if (!await pastaDoDia.exists()) await pastaDoDia.create(recursive: true);
       final fileName = 'geoforest_export_cubagens_${DateFormat('HH-mm-ss').format(hoje)}.csv';
       final path = '${pastaDoDia.path}/$fileName';
-
       final csvData = const ListToCsvConverter().convert(rows);
       await File(path).writeAsString(csvData);
-
       if (context.mounted) {
           ScaffoldMessenger.of(context).removeCurrentSnackBar();
           await Share.shareXFiles([XFile(path)], subject: 'Exportação de Todas as Cubagens');
@@ -375,56 +419,30 @@ class DatabaseHelper {
 
     List<List<dynamic>> rows = [];
     rows.add(['identificador_arvore', 'altura_total_m', 'tipo_medida_cap', 'valor_cap_cm', 'altura_base_m', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
-
     if (secoes.isEmpty) {
       rows.add([arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase, null, null, null, null, null, null]);
     } else {
       for (var secao in secoes) {
-        rows.add([
-          arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase,
-          secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm,
-          secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2),
-        ]);
+        rows.add([ arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase, secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm, secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2) ]);
       }
     }
 
     final csvData = const ListToCsvConverter().convert(rows);
-
     try {
       final directory = await getApplicationDocumentsDirectory();
       final hoje = DateTime.now();
       final nomePastaData = DateFormat('yyyy-MM-dd').format(hoje);
       final pastaDoDia = Directory('${directory.path}/$nomePastaData');
-
-      if (!await pastaDoDia.exists()) {
-        await pastaDoDia.create(recursive: true);
-      }
-
+      if (!await pastaDoDia.exists()) await pastaDoDia.create(recursive: true);
       final sanitizedId = arvore.identificador.replaceAll(RegExp(r'[\\/*?:"<>|]'), '_');
       final fileName = 'Cubagem_${sanitizedId}_${DateFormat('HH-mm-ss').format(hoje)}.csv';
       final path = '${pastaDoDia.path}/$fileName';
-
       await File(path).writeAsString(csvData);
-
       if (context.mounted) {
         await Share.shareXFiles([XFile(path)], subject: 'Exportação de Cubagem: ${arvore.identificador}');
       }
     } catch (e) {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao exportar: $e')));
     }
-  }
-
-  // =============================================================
-  // ============= NOVO MÉTODO PARA LIMPEZA INTELIGENTE ============
-  // =============================================================
-  Future<int> limparParcelasExportadas() async {
-    final db = await database;
-    final count = await db.delete(
-      'parcelas',
-      where: 'exportada = ?',
-      whereArgs: [1],
-    );
-    debugPrint('$count parcelas exportadas foram apagadas.');
-    return count;
   }
 }

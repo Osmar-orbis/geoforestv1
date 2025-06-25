@@ -1,27 +1,35 @@
 // lib/providers/map_provider.dart
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:geoforestcoletor/models/sample_point.dart'; // <<< 1. IMPORT NECESSÁRIO
+import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
+import 'package:geoforestcoletor/models/parcela_model.dart';
+import 'package:geoforestcoletor/models/sample_point.dart';
 import 'package:geoforestcoletor/services/geojson_service.dart';
 import 'package:geoforestcoletor/services/sampling_service.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-// Enum para gerenciar os tipos de mapa de fundo de forma segura.
 enum MapLayerType { ruas, satelite, sateliteMapbox }
 
 class MapProvider with ChangeNotifier {
   final _geoJsonService = GeoJsonService();
+  final _dbHelper = DatabaseHelper();
 
-  // ESTADO INTERNO DO PROVIDER
   List<Polygon> _polygons = [];
-  List<SamplePoint> _samplePoints = []; // O tipo de dado foi atualizado para SamplePoint
+  List<SamplePoint> _samplePoints = [];
   bool _isLoading = false;
   String _farmName = '';
   String _blockName = '';
-  MapLayerType _currentLayer = MapLayerType.satelite; // Mudei o padrão para satélite
+  MapLayerType _currentLayer = MapLayerType.satelite;
+  
+  Position? _currentUserPosition;
+  StreamSubscription<Position>? _positionStreamSubscription;
+  bool _isFollowingUser = false;
 
-  // URLs para os diferentes "paineis" de mapa.
   final Map<MapLayerType, String> _tileUrls = {
     MapLayerType.ruas: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     MapLayerType.satelite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -30,19 +38,19 @@ class MapProvider with ChangeNotifier {
 
   final String _mapboxAccessToken = 'pk.eyJ1IjoiZ2VvZm9yZXN0YXBwIiwiYSI6ImNtY2FyczBwdDAxZmYybHB1OWZlbG1pdW0ifQ.5HeYC0moMJ8dzZzVXKTPrg';
 
-  // GETTERS PÚBLICOS (A forma como a UI lê o estado)
   List<Polygon> get polygons => _polygons;
   List<SamplePoint> get samplePoints => _samplePoints;
   bool get isLoading => _isLoading;
   String get farmName => _farmName;
   String get blockName => _blockName;
   MapLayerType get currentLayer => _currentLayer;
+  Position? get currentUserPosition => _currentUserPosition;
+  bool get isFollowingUser => _isFollowingUser;
 
   String get currentTileUrl {
     String url = _tileUrls[_currentLayer]!;
     if (url.contains('{accessToken}')) {
-      if (_mapboxAccessToken.contains('SUA_CHAVE_AQUI')) {
-        // Fallback para o satélite padrão se a chave não for inserida
+      if (_mapboxAccessToken.contains('SUA_CHAVE_AQUI') || _mapboxAccessToken.isEmpty) {
         return _tileUrls[MapLayerType.satelite]!;
       }
       return url.replaceAll('{accessToken}', _mapboxAccessToken);
@@ -50,9 +58,6 @@ class MapProvider with ChangeNotifier {
     return url;
   }
   
-  // MÉTODOS PÚBLICOS (A forma como a UI modifica o estado)
-
-  /// Cicla para a próxima camada de mapa disponível.
   void switchMapLayer() {
     final layers = MapLayerType.values;
     final nextIndex = (_currentLayer.index + 1) % layers.length;
@@ -60,86 +65,137 @@ class MapProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Limpa todos os dados do mapa, exceto o tipo de camada.
   void clearMapData() {
     _polygons = [];
     _samplePoints = [];
     _farmName = '';
     _blockName = '';
+    _clearLastProject();
+    if (_isFollowingUser) {
+      toggleFollowingUser();
+    }
     notifyListeners();
   }
 
-  /// Importa um novo GeoJSON, limpando todos os dados anteriores.
-  Future<int> importAndClear() async {
-    _setLoading(true);
-    // Limpa tudo antes de começar a importar o novo arquivo
-    clearMapData();
-    _polygons = await _geoJsonService.importAndParseGeoJson();
-    _setLoading(false);
-    return _polygons.length;
+  Future<void> _clearLastProject() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('last_farm_name');
+    await prefs.remove('last_block_name');
   }
 
-  /// Gera os pontos de amostragem com base nos polígonos carregados.
-  Future<int> generateSamples({
-    required double hectaresPerSample,
-    required String farmName,
-    required String blockName,
-  }) async {
-    if (_polygons.isEmpty) return 0;
-    
+  Future<bool> importAndClear() async {
     _setLoading(true);
+    clearMapData();
+    final importedData = await _geoJsonService.importAndParseGeoJson();
+    _polygons = importedData['polygons'] as List<Polygon>;
+    _samplePoints = importedData['points'] as List<SamplePoint>;
+    _setLoading(false);
+    return _polygons.isNotEmpty || _samplePoints.isNotEmpty;
+  }
 
-    _farmName = farmName;
-    _blockName = blockName;
-    
-    // O método 'compute' é ótimo para performance, mantemos ele.
-    _samplePoints = await compute(_generatePointsInBackground, {
-      'polygons': _polygons,
-      'hectaresPerSample': hectaresPerSample,
-    });
-    
+  Future<void> saveImportedProject({required String farmName, required String blockName, String? idFazenda}) async {
+    if (_samplePoints.isEmpty) return;
+    _setLoading(true);
+    await _saveCurrentProject(farmName, blockName);
+    final List<Parcela> novasParcelas = _samplePoints.map((point) => Parcela(
+      nomeFazenda: farmName, nomeTalhao: blockName, idFazenda: idFazenda, idParcela: point.id.toString(),
+      latitude: point.position.latitude, longitude: point.position.longitude, status: StatusParcela.pendente,
+      dataColeta: DateTime.now(), areaMetrosQuadrados: 0, exportada: false,
+    )).toList();
+    await _dbHelper.saveBatchParcelas(novasParcelas);
+    await loadSamplesFromDb(farmName: farmName, blockName: blockName);
+    _setLoading(false);
+  }
+
+  Future<int> generateSamples({required double hectaresPerSample, required String farmName, required String blockName, String? idFazenda}) async {
+    if (_polygons.isEmpty) return 0;
+    _setLoading(true);
+    await _saveCurrentProject(farmName, blockName);
+    final points = await compute(_generatePointsInBackground, {'polygons': _polygons, 'hectaresPerSample': hectaresPerSample});
+    final List<Parcela> novasParcelas = points.map((point) => Parcela(
+      nomeFazenda: farmName, idFazenda: idFazenda, nomeTalhao: blockName, idParcela: point.id.toString(),
+      latitude: point.position.latitude, longitude: point.position.longitude, status: StatusParcela.pendente,
+      dataColeta: DateTime.now(), areaMetrosQuadrados: 0, exportada: false,
+    )).toList();
+    await _dbHelper.saveBatchParcelas(novasParcelas);
+    await loadSamplesFromDb(farmName: farmName, blockName: blockName);
     _setLoading(false);
     return _samplePoints.length;
   }
 
-  /// Função estática auxiliar que roda em uma thread separada via 'compute'.
   static List<SamplePoint> _generatePointsInBackground(Map<String, dynamic> params) {
-    // Esta função não pode acessar 'this', então instanciamos o serviço aqui.
     final samplingService = SamplingService();
     final List<Polygon> polygons = params['polygons'];
     final double hectaresPerSample = params['hectaresPerSample'];
-    
-    return samplingService.generateGridSamplePoints(
-      polygons: polygons,
-      hectaresPerSample: hectaresPerSample,
-    );
+    return samplingService.generateGridSamplePoints(polygons: polygons, hectaresPerSample: hectaresPerSample);
   }
 
-  // =========================================================================
-  // ============ FUNCIONALIDADE NOVA: GERENCIAMENTO DE STATUS ===============
-  // =========================================================================
+  Future<void> loadSamplesFromDb({required String farmName, required String blockName}) async {
+    _setLoading(true);
+    _farmName = farmName;
+    _blockName = blockName;
+    final parcelasDoBanco = await _dbHelper.getParcelasByProject(farmName, blockName);
+    _samplePoints = parcelasDoBanco.map((parcela) {
+      SampleStatus status;
+      switch (parcela.status) {
+        case StatusParcela.concluida: status = SampleStatus.completed; break;
+        case StatusParcela.emAndamento: status = SampleStatus.open; break;
+        case StatusParcela.pendente: status = SampleStatus.untouched;
+      }
+      return SamplePoint(
+        id: int.tryParse(parcela.idParcela) ?? 0,
+        position: LatLng(parcela.latitude ?? 0, parcela.longitude ?? 0),
+        status: status, data: {'dbId': parcela.dbId},
+      );
+    }).toList();
+    _setLoading(false);
+  }
 
-  /// Atualiza o status de uma parcela específica e notifica a UI para reconstruir.
-  void updateSampleStatus(int pointId, SampleStatus newStatus) {
-    // 'indexWhere' é a forma mais performática de encontrar um item em uma lista.
-    final index = _samplePoints.indexWhere((p) => p.id == pointId);
-
-    // Verificamos se o ponto foi encontrado para evitar erros.
-    if (index != -1) {
-      // Usamos o método 'copyWith' que criamos no modelo para gerar uma nova instância
-      // do ponto com o status atualizado. Isso segue os princípios de imutabilidade.
-      _samplePoints[index] = _samplePoints[index].copyWith(status: newStatus);
-
-      // O comando mais importante: notifica todos os widgets que estão 'escutando'
-      // (usando context.watch) que este provider mudou, fazendo com que eles
-      // se reconstruam e mostrem a nova cor.
-      notifyListeners();
+  Future<void> loadLastProject() async {
+    _setLoading(true);
+    final prefs = await SharedPreferences.getInstance();
+    final lastFarm = prefs.getString('last_farm_name');
+    final lastBlock = prefs.getString('last_block_name');
+    if (lastFarm != null && lastBlock != null && lastFarm.isNotEmpty && lastBlock.isNotEmpty) {
+      await loadSamplesFromDb(farmName: lastFarm, blockName: lastBlock);
     }
+    _setLoading(false);
   }
 
-  // =========================================================================
+  Future<void> _saveCurrentProject(String farmName, String blockName) async {
+    _farmName = farmName;
+    _blockName = blockName;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_farm_name', farmName);
+    await prefs.setString('last_block_name', blockName);
+  }
 
-  /// Método privado para controlar o estado de loading de forma centralizada.
+  void toggleFollowingUser() {
+    if (_isFollowingUser) {
+      _positionStreamSubscription?.cancel();
+      _isFollowingUser = false;
+    } else {
+      const locationSettings = LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 1);
+      _positionStreamSubscription = Geolocator.getPositionStream(locationSettings: locationSettings).listen((Position position) {
+        _currentUserPosition = position;
+        notifyListeners();
+      });
+      _isFollowingUser = true;
+    }
+    notifyListeners();
+  }
+
+  void updateUserPosition(Position position) {
+    _currentUserPosition = position;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _positionStreamSubscription?.cancel();
+    super.dispose();
+  }
+  
   void _setLoading(bool value) {
     _isLoading = value;
     notifyListeners();

@@ -1,10 +1,10 @@
 // lib/pages/cubagem_dados_page.dart (VERSÃO ATUALIZADA PARA FLUXO CONTÍNUO DE SEÇÕES)
 
 import 'package:flutter/material.dart';
-import '../helpers/database_helper.dart';
-import '../models/cubagem_arvore_model.dart';
-import '../models/cubagem_secao_model.dart';
-import '../widgets/cubagem_secao_dialog.dart'; // Importar o novo SecaoDialogResult
+import '../../data/datasources/local/database_helper.dart';
+import '../../models/cubagem_arvore_model.dart';
+import '../../models/cubagem_secao_model.dart';
+import '../../widgets/cubagem_secao_dialog.dart'; // Importar o novo SecaoDialogResult
 
 // A classe CubagemResult permanece a mesma, pois ela é para a página, não para o diálogo de seção.
 class CubagemResult {

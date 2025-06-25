@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart'; // Adicionado para kDebugMode
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // Adicionado para FirebaseAuth
 import 'package:geoforestcoletor/services/auth_service.dart';
-import 'package:geoforestcoletor/pages/register_page.dart';
-import 'package:geoforestcoletor/pages/forgot_password_page.dart';
+import 'package:geoforestcoletor/pages/menu/register_page.dart';
+import 'package:geoforestcoletor/pages/menu/forgot_password_page.dart';
 
 // Sugestão: Centralizar cores para facilitar a manutenção
 const Color primaryColor = Color(0xFF1D4433);
