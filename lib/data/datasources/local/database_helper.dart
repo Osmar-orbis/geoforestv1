@@ -45,7 +45,7 @@ class DatabaseHelper {
     });
     return await openDatabase(
       join(await getDatabasesPath(), 'geoforestcoletor.db'),
-      version: 13,
+      version: 13, // Mantido em 13, já que não estamos mudando a estrutura do banco.
       onConfigure: _onConfigure,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -108,7 +108,6 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Migrações antigas mantidas por segurança, com try-catch para evitar falhas
     if (oldVersion < 2) { 
         await db.execute('''CREATE TABLE arvores (id INTEGER PRIMARY KEY AUTOINCREMENT, parcelaId INTEGER NOT NULL, cap REAL NOT NULL, altura REAL, linha INTEGER NOT NULL, posicaoNaLinha INTEGER NOT NULL, fimDeLinha INTEGER NOT NULL, dominante INTEGER NOT NULL, status TEXT NOT NULL, FOREIGN KEY (parcelaId) REFERENCES parcelas (id) ON DELETE CASCADE)''');
     }
@@ -272,6 +271,53 @@ class DatabaseHelper {
   }
 
   // ==========================================================
+  // >>>>> NOVOS MÉTODOS PARA ANÁLISE DE DADOS <<<<<
+  // ==========================================================
+
+  /// Retorna um mapa com todas as fazendas e seus respectivos talhões que possuem coletas.
+  Future<Map<String, List<String>>> getProjetosDisponiveis() async {
+    final db = await database;
+    final List<Map<String, dynamic>> result = await db.rawQuery(
+      'SELECT DISTINCT nomeFazenda, nomeTalhao FROM parcelas ORDER BY nomeFazenda, nomeTalhao'
+    );
+    final Map<String, List<String>> projetos = {};
+    for (var row in result) {
+      final String nomeFazenda = row['nomeFazenda'];
+      final String nomeTalhao = row['nomeTalhao'];
+      if (!projetos.containsKey(nomeFazenda)) {
+        projetos[nomeFazenda] = [];
+      }
+      projetos[nomeFazenda]!.add(nomeTalhao);
+    }
+    return projetos;
+  }
+
+  /// Retorna todas as parcelas de um talhão, já com suas respectivas listas de árvores populadas.
+  Future<List<Parcela>> getParcelasComArvores(String nomeFazenda, String nomeTalhao) async {
+    final db = await database;
+    final List<Map<String, dynamic>> parcelasMaps = await db.query(
+      'parcelas',
+      where: 'nomeFazenda = ? AND nomeTalhao = ?',
+      whereArgs: [nomeFazenda, nomeTalhao],
+    );
+
+    if (parcelasMaps.isEmpty) {
+      return [];
+    }
+    
+    List<Parcela> parcelas = parcelasMaps.map((map) => Parcela.fromMap(map)).toList();
+
+    for (var parcela in parcelas) {
+      if (parcela.dbId != null) {
+        final List<Arvore> arvores = await getArvoresDaParcela(parcela.dbId!);
+        parcela.arvores = arvores;
+      }
+    }
+    
+    return parcelas;
+  }
+
+  // ==========================================================
   // MÉTODOS CRUD E HELPER (CUBAGEM)
   // ==========================================================
   
@@ -370,12 +416,34 @@ class DatabaseHelper {
     }
   }
 
+  /// Retorna um mapa de {Status da Árvore: Quantidade} para o gráfico de pizza.
+  Future<Map<String, double>> getDistribuicaoPorStatus(int parcelaId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> result = await db.rawQuery('''
+      SELECT status, COUNT(*) as total
+      FROM arvores
+      WHERE parcelaId = ?
+      GROUP BY status
+    ''', [parcelaId]);
+
+    if (result.isEmpty) return {};
+    return { for (var row in result) row['status']: (row['total'] as int).toDouble() };
+  }
+
+  /// Retorna uma lista com todos os valores de CAP de uma parcela para o histograma.
+  Future<List<double>> getValoresCAP(int parcelaId) async {
+      final db = await database;
+      final List<Map<String, dynamic>> result = await db.rawQuery(
+          'SELECT cap FROM arvores WHERE parcelaId = ?', [parcelaId]
+      );
+      if (result.isEmpty) return [];
+      return result.map((row) => row['cap'] as double).toList();
+  }
 
   // =========================================================================
-  // ---> INÍCIO DOS MÉTODOS DE EXPORTAÇÃO ATUALIZADOS <---
+  // MÉTODOS DE EXPORTAÇÃO
   // =========================================================================
 
-  /// Exporta os dados das coletas de parcelas com base na escolha do usuário.
   Future<void> exportarDados(BuildContext context) async {
     final tipoExportacao = await showDialog<String>(
       context: context,
@@ -408,14 +476,12 @@ class DatabaseHelper {
       final List<Map<String, dynamic>> parcelasMaps;
 
       if (tipoExportacao == 'novas_concluidas') {
-        // Pega parcelas que estão CONCLUÍDAS E AINDA NÃO FORAM EXPORTADAS.
         parcelasMaps = await db.query(
           'parcelas',
           where: 'status = ? AND exportada = ?',
-          whereArgs: [StatusParcela.concluida.name, 0], // 0 = false
+          whereArgs: [StatusParcela.concluida.name, 0],
         );
-      } else { // 'todas_concluidas'
-        // Pega TODAS as parcelas concluídas, ignorando se já foram exportadas.
+      } else {
         parcelasMaps = await db.query(
           'parcelas',
           where: 'status = ?',
@@ -498,7 +564,6 @@ class DatabaseHelper {
     }
   }
 
-  /// Exporta os dados das cubagens rigorosas com base na escolha do usuário.
   Future<void> exportarCubagens(BuildContext context) async {
     final tipoExportacao = await showDialog<String>(
       context: context,
@@ -530,10 +595,8 @@ class DatabaseHelper {
       final List<Map<String, dynamic>> arvoresMaps;
 
       if (tipoExportacao == 'novas') {
-        // Pega cubagens que AINDA NÃO FORAM EXPORTADAS.
         arvoresMaps = await db.query('cubagens_arvores', where: 'exportada = ?', whereArgs: [0]);
-      } else { // 'todas'
-        // Pega TODAS as cubagens, sem filtro.
+      } else {
         arvoresMaps = await db.query('cubagens_arvores');
       }
       
@@ -592,9 +655,4 @@ class DatabaseHelper {
         }
     }
   }
-
-  // =========================================================================
-  // ---> FIM DOS MÉTODOS DE EXPORTAÇÃO ATUALIZADOS <---
-  // =========================================================================
-
 }

@@ -1,35 +1,48 @@
-// lib/models/arvore_model.dart
+// lib/models/arvore_model.dart (VERSÃO SEM VOLUME)
 
-enum StatusArvore { 
-  normal, 
+enum StatusArvore {
+  normal,
   falha,
   bifurcada,
   multipla,
-  quebrada, 
+  quebrada,
   morta,
-  caida, 
-  ataquemacaco, 
-  regenaracao, 
+  caida,
+  ataquemacaco,
+  regenaracao,
   inclinada,
   fogo,
   formiga,
   outro
-   // <<< RE-ADICIONADO
+}
+
+enum StatusArvore2 {
+  bifurcada,
+  multipla,
+  quebrada,
+  morta,
+  caida,
+  ataquemacaco,
+  regenaracao,
+  inclinada,
+  fogo,
+  formiga,
+  outro
 }
 
 class Arvore {
-  int id;
-  double cap;
-  double? altura;
-  int linha;
-  int posicaoNaLinha;
-  bool fimDeLinha;
+  int? id;
+  final double cap;
+  final double? altura;
+  final int linha;
+  final int posicaoNaLinha;
+  final bool fimDeLinha;
   bool dominante;
-  StatusArvore status;
-  StatusArvore? status2;
-  
+  final StatusArvore status;
+  final StatusArvore2? status2;
+
   Arvore({
-    required this.id,
+    this.id,
     required this.cap,
     this.altura,
     required this.linha,
@@ -40,46 +53,55 @@ class Arvore {
     this.status2,
   });
 
-  // Verifica se a árvore é considerada "múltipla" para fins de UI
-  bool get isConsideradaMultipla {
-    return status == StatusArvore.multipla ||
-           status == StatusArvore.bifurcada ||
-           status2 == StatusArvore.multipla ||
-           status2 == StatusArvore.bifurcada;
-  }
-  factory Arvore.fromMap(Map<String, dynamic> map) {
+  Arvore copyWith({
+    int? id,
+    double? cap,
+    double? altura,
+    int? linha,
+    int? posicaoNaLinha,
+    bool? fimDeLinha,
+    bool? dominante,
+    StatusArvore? status,
+    StatusArvore2? status2,
+  }) {
     return Arvore(
-      id: map['id'],
-      cap: map['cap'],
-      altura: map['altura'],
-      linha: map['linha'],
-      posicaoNaLinha: map['posicaoNaLinha'],
-      fimDeLinha: map['fimDeLinha'] == 1,
-      dominante: map['dominante'] == 1,
-      status: StatusArvore.values.firstWhere(
-        (e) => e.name == map['status'],
-        orElse: () => StatusArvore.normal, // Valor padrão caso não encontre
-      ),
-      status2: map['status2'] != null
-          ? StatusArvore.values.firstWhere(
-              (e) => e.name == map['status2'],
-              orElse: () => StatusArvore.normal,
-            )
-          : null,
+      id: id ?? this.id,
+      cap: cap ?? this.cap,
+      altura: altura ?? this.altura,
+      linha: linha ?? this.linha,
+      posicaoNaLinha: posicaoNaLinha ?? this.posicaoNaLinha,
+      fimDeLinha: fimDeLinha ?? this.fimDeLinha,
+      dominante: dominante ?? this.dominante,
+      status: status ?? this.status,
+      status2: status2 ?? this.status2,
     );
   }
-  
+
   Map<String, dynamic> toMap() {
     return {
-      'id': id == 0 ? null : id,
-      'cap': cap, 
-      'altura': altura, 
-      'linha': linha, 
+      'id': id,
+      'cap': cap,
+      'altura': altura,
+      'linha': linha,
       'posicaoNaLinha': posicaoNaLinha,
       'fimDeLinha': fimDeLinha ? 1 : 0,
       'dominante': dominante ? 1 : 0,
       'status': status.name,
       'status2': status2?.name,
     };
+  }
+
+  factory Arvore.fromMap(Map<String, dynamic> map) {
+    return Arvore(
+      id: map['id'],
+      cap: map['cap']?.toDouble() ?? 0.0,
+      altura: map['altura']?.toDouble(),
+      linha: map['linha'] ?? 0,
+      posicaoNaLinha: map['posicaoNaLinha'] ?? 0,
+      fimDeLinha: map['fimDeLinha'] == 1,
+      dominante: map['dominante'] == 1,
+      status: StatusArvore.values.firstWhere((e) => e.name == map['status'], orElse: () => StatusArvore.normal),
+      status2: map['status2'] != null ? StatusArvore2.values.firstWhere((e) => e.name == map['status2']) : null,
+    );
   }
 }

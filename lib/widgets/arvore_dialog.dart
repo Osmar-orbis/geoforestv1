@@ -1,18 +1,21 @@
-// lib/widgets/arvore_dialog.dart (VERSÃO COM LINHA E POSIÇÃO EDITÁVEIS SEMPRE)
+// lib/widgets/arvore_dialog.dart (VERSÃO SEM VOLUME)
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/models/arvore_model.dart';
 
-// A classe de resultado agora informa qual ação foi tomada
 class DialogResult {
   final Arvore arvore;
-  final bool continuarNaMesmaPosicao; // Para fustes múltiplos
-  final bool irParaProxima; // <<-- NOVA FLAG
+  final bool irParaProxima;
+  final bool continuarNaMesmaPosicao;
+  final bool atualizarEProximo;
+  final bool atualizarEAnterior;
 
   DialogResult({
     required this.arvore,
+    this.irParaProxima = false,
     this.continuarNaMesmaPosicao = false,
-    this.irParaProxima = false, // <<-- VALOR PADRÃO
+    this.atualizarEProximo = false,
+    this.atualizarEAnterior = false,
   });
 }
 
@@ -30,190 +33,184 @@ class ArvoreDialog extends StatefulWidget {
     this.isAdicionandoFuste = false,
   });
 
+  bool get isEditing => arvoreParaEditar != null;
+
   @override
   State<ArvoreDialog> createState() => _ArvoreDialogState();
 }
 
 class _ArvoreDialogState extends State<ArvoreDialog> {
   final _formKey = GlobalKey<FormState>();
-  late TextEditingController _linhaController;
-  late TextEditingController _posicaoController;
   final _capController = TextEditingController();
   final _alturaController = TextEditingController();
-  
-  late StatusArvore _status;
-  StatusArvore? _status2;
-  late bool _isDominante;
-  late bool _isFimDeLinha;
 
-  bool get isEditing => widget.arvoreParaEditar != null;
-  
+  late StatusArvore _status;
+  StatusArvore2? _status2;
+  bool _fimDeLinha = false;
+  bool _camposHabilitados = true;
+
   @override
   void initState() {
     super.initState();
-    final arvore = widget.arvoreParaEditar;
-
-    _linhaController = TextEditingController(text: (arvore?.linha ?? widget.linhaAtual).toString());
-    _posicaoController = TextEditingController(text: (arvore?.posicaoNaLinha ?? widget.posicaoNaLinhaAtual).toString());
-    _capController.text = arvore?.cap.toStringAsFixed(1) ?? '';
-    _alturaController.text = arvore?.altura?.toStringAsFixed(1) ?? '';
-
-    if (widget.isAdicionandoFuste) {
-      _status = StatusArvore.multipla;
+    if (widget.isEditing) {
+      final arvore = widget.arvoreParaEditar!;
+      _capController.text = arvore.cap.toString();
+      _alturaController.text = arvore.altura?.toString() ?? '';
+      _status = arvore.status;
+      _status2 = arvore.status2;
+      _fimDeLinha = arvore.fimDeLinha;
     } else {
-      _status = arvore?.status ?? StatusArvore.normal;
+      _status = StatusArvore.normal;
     }
+    _atualizarEstadoCampos();
+  }
 
-    _status2 = arvore?.status2;
-    _isDominante = arvore?.dominante ?? false;
-    _isFimDeLinha = arvore?.fimDeLinha ?? false;
+  void _atualizarEstadoCampos() {
+    setState(() {
+      if (_status == StatusArvore.falha || _status == StatusArvore.caida) {
+        _camposHabilitados = false;
+        _capController.text = '0';
+        _alturaController.clear();
+      } else {
+        _camposHabilitados = true;
+        if (_capController.text == '0') {
+          _capController.clear();
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
     _capController.dispose();
     _alturaController.dispose();
-    _linhaController.dispose();
-    _posicaoController.dispose();
     super.dispose();
   }
 
-  String getStatusDisplayName(StatusArvore status) {
-    return status.name[0].toUpperCase() + status.name.substring(1);
-  }
-
-  // Função _salvar agora aceita um parâmetro para 'irParaProxima'
-  void _salvar({required bool continuarFuste, required bool irParaProxima}) {
+  void _submit({bool proxima = false, bool mesmoFuste = false, bool atualizarEProximo = false, bool atualizarEAnterior = false}) {
     if (_formKey.currentState!.validate()) {
+      final double cap = double.tryParse(_capController.text.replaceAll(',', '.')) ?? 0.0;
+      final double? altura = _alturaController.text.isNotEmpty ? double.tryParse(_alturaController.text.replaceAll(',', '.')) : null;
+
       final arvore = Arvore(
-        id: widget.arvoreParaEditar?.id ?? 0,
-        linha: int.tryParse(_linhaController.text) ?? widget.linhaAtual,
-        posicaoNaLinha: int.tryParse(_posicaoController.text) ?? widget.posicaoNaLinhaAtual,
-        cap: double.tryParse(_capController.text.replaceAll(',', '.')) ?? 0,
-        altura: _alturaController.text.isNotEmpty ? double.tryParse(_alturaController.text.replaceAll(',', '.')) : null,
+        id: widget.arvoreParaEditar?.id,
+        cap: cap,
+        altura: altura,
+        linha: widget.linhaAtual,
+        posicaoNaLinha: widget.posicaoNaLinhaAtual,
         status: _status,
         status2: _status2,
-        dominante: _isDominante,
-        fimDeLinha: !continuarFuste ? _isFimDeLinha : false, // Fim de linha só é relevante se não for adicionar fuste
+        fimDeLinha: _fimDeLinha,
+        dominante: widget.arvoreParaEditar?.dominante ?? false,
       );
-      
-      // Retorna o resultado com a nova flag
+
       Navigator.of(context).pop(DialogResult(
         arvore: arvore,
-        continuarNaMesmaPosicao: continuarFuste,
-        irParaProxima: irParaProxima,
+        irParaProxima: proxima,
+        continuarNaMesmaPosicao: mesmoFuste,
+        atualizarEProximo: atualizarEProximo,
+        atualizarEAnterior: atualizarEAnterior,
       ));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool podeAdicionarFuste = _status == StatusArvore.multipla || _status2 == StatusArvore.multipla;
+    bool hasStatus2 = widget.arvoreParaEditar?.status2 != null || _status2 != null;
 
     return AlertDialog(
-      title: Text(isEditing ? 'Editar Árvore' : 'Adicionar Árvore'),
+      title: Text(widget.isEditing
+          ? 'Editar Árvore L${widget.linhaAtual}/P${widget.posicaoNaLinhaAtual}'
+          : widget.isAdicionandoFuste
+              ? 'Adicionar Fuste L${widget.linhaAtual}/P${widget.posicaoNaLinhaAtual}'
+              : 'Adicionar Árvore L${widget.linhaAtual}/P${widget.posicaoNaLinhaAtual}'),
       content: SingleChildScrollView(
         child: Form(
           key: _formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Campos de Linha e Posição editáveis
-              Row(
-                children: [
-                  Expanded(child: TextFormField(controller: _linhaController, enabled: true, decoration: const InputDecoration(labelText: 'Linha', border: OutlineInputBorder()), keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Obrigatório' : null)),
-                  const SizedBox(width: 16),
-                  Expanded(child: TextFormField(controller: _posicaoController, enabled: true, decoration: const InputDecoration(labelText: 'Posição', border: OutlineInputBorder()), keyboardType: TextInputType.number, validator: (v) => v!.isEmpty ? 'Obrigatório' : null)),
-                ],
-              ),
-              const SizedBox(height: 16),
-              
-              // Restante do formulário
               DropdownButtonFormField<StatusArvore>(
                 value: _status,
-                decoration: const InputDecoration(labelText: 'Status Principal', border: OutlineInputBorder()),
-                items: StatusArvore.values.map((s) => DropdownMenuItem(value: s, child: Text(getStatusDisplayName(s)))).toList(),
-                onChanged: (val) { if (val != null) setState(() { _status = val; if (_status2 == _status) _status2 = null; }); },
+                decoration: const InputDecoration(labelText: 'Status Principal'),
+                items: StatusArvore.values.map((s) => DropdownMenuItem(value: s, child: Text(s.name))).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _status = value);
+                    _atualizarEstadoCampos();
+                  }
+                },
               ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<StatusArvore?>(
-                value: _status2,
-                decoration: const InputDecoration(labelText: 'Status Secundário (Opcional)', border: const OutlineInputBorder()),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('-- Nenhum --')),
-                  ...StatusArvore.values.where((s) => s != _status).map((s) => DropdownMenuItem(value: s, child: Text(getStatusDisplayName(s)))),
-                ],
-                onChanged: (val) => setState(() => _status2 = val),
-              ),
+              if (hasStatus2) ...[
+                const SizedBox(height: 16),
+                DropdownButtonFormField<StatusArvore2?>(
+                  value: _status2,
+                  decoration: const InputDecoration(labelText: 'Status Secundário (Opcional)'),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('Nenhum')),
+                    ...StatusArvore2.values.map((s) => DropdownMenuItem(value: s, child: Text(s.name))),
+                  ],
+                  onChanged: (value) => setState(() => _status2 = value),
+                ),
+              ],
               const SizedBox(height: 16),
               TextFormField(
                 controller: _capController,
-                enabled: _status != StatusArvore.falha,
-                decoration: InputDecoration(labelText: 'CAP (cm)', border: const OutlineInputBorder(), filled: _status == StatusArvore.falha, fillColor: Colors.grey[200]),
+                enabled: _camposHabilitados,
+                decoration: const InputDecoration(labelText: 'CAP (cm)'),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                validator: (v) => (_status != StatusArvore.falha) && (v == null || v.isEmpty) ? 'Campo obrigatório' : null,
+                validator: (value) {
+                  if (_camposHabilitados && (value == null || value.isEmpty)) {
+                    return 'Campo obrigatório';
+                  }
+                  if (double.tryParse(value!.replaceAll(',', '.')) == null) {
+                    return 'Número inválido';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _alturaController,
-                enabled: _status != StatusArvore.falha,
-                decoration: InputDecoration(labelText: 'Altura (m)', border: const OutlineInputBorder(), filled: _status == StatusArvore.falha, fillColor: Colors.grey[200]),
+                enabled: _camposHabilitados,
+                decoration: const InputDecoration(labelText: 'Altura (m) - Opcional'),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
               ),
-              const SizedBox(height: 8),
-
-              // =============================================================
-              // =========== CHECKBOXES RESTAURADOS E FUNCIONAIS =============
-              // =============================================================
-              CheckboxListTile(
-                title: const Text('Árvore Dominante'),
-                value: _isDominante,
-                onChanged: (val) => setState(() => _isDominante = val ?? false),
-                controlAffinity: ListTileControlAffinity.leading,
-                contentPadding: EdgeInsets.zero,
-              ),
-              CheckboxListTile(
-                title: const Text('Fim da linha'),
-                subtitle: const Text('(Marque no último fuste desta posição)'),
-                value: _isFimDeLinha,
-                onChanged: (val) => setState(() => _isFimDeLinha = val ?? false),
-                controlAffinity: ListTileControlAffinity.leading,
-                contentPadding: EdgeInsets.zero,
-              ),
+              if (!widget.isEditing)
+                SwitchListTile(
+                  title: const Text('Fim da linha de plantio?'),
+                  value: _fimDeLinha,
+                  onChanged: (value) => setState(() => _fimDeLinha = value),
+                ),
             ],
           ),
         ),
       ),
-      actionsAlignment: MainAxisAlignment.end,
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
-        
-        // =============================================================
-        // ============== BOTÕES DE AÇÃO ATUALIZADOS ===================
-        // =============================================================
-        
-        // Botão "Salvar" (que apenas fecha o diálogo)
-        OutlinedButton(
-          onPressed: () => _salvar(continuarFuste: false, irParaProxima: false),
-          child: Text(isEditing ? 'Atualizar' : 'Salvar'),
-        ),
-
-        // Botão "Salvar e Próxima" (o botão principal)
-        // Só aparece se não estiver editando e não for adicionar fuste
-        if (!isEditing && !podeAdicionarFuste)
-          ElevatedButton(
-            onPressed: () => _salvar(continuarFuste: false, irParaProxima: true),
-            child: const Text('Salvar e Próxima'),
-          ),
-
-        // O botão de fuste
-        if (!isEditing && podeAdicionarFuste)
-          ElevatedButton(
-            onPressed: () => _salvar(continuarFuste: true, irParaProxima: false), // Fuste não avança para a próxima posição
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[800]),
-            child: const Text('Adic. Fuste'),
-          ),
+      actions: <Widget>[
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 8.0,
+          children: widget.isEditing
+              ? [
+                  TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+                  TextButton(onPressed: () => _submit(atualizarEAnterior: true), child: const Text('Atualizar Ant.')),
+                  ElevatedButton(onPressed: () => _submit(), child: const Text('Atualizar')),
+                  ElevatedButton(
+                    onPressed: () => _submit(atualizarEProximo: true),
+                    style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor),
+                    child: const Text('Atualizar Próx.'),
+                  ),
+                ]
+              : [
+                  TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+                  ElevatedButton(onPressed: () => _submit(mesmoFuste: true), child: const Text('Adic. Fuste')),
+                  ElevatedButton(
+                    onPressed: () => _submit(proxima: true),
+                    style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor),
+                    child: const Text('Salvar e Próximo'),
+                  ),
+                ],
+        )
       ],
     );
   }

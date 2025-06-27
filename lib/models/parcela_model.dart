@@ -1,8 +1,7 @@
-// lib/models/parcela_model.dart
-
-// ignore_for_file: non_constant_identifier_names
+// lib/models/parcela_model.dart (VERSÃO COMPLETA E CORRIGIDA)
 
 import 'package:flutter/material.dart';
+import 'package:geoforestcoletor/models/arvore_model.dart';
 
 enum StatusParcela {
   pendente(Icons.pending_outlined, Colors.grey),
@@ -34,6 +33,9 @@ class Parcela {
   final double? comprimento;
   final double? raio;
 
+  // Campo para carregar as árvores sob demanda, sem afetar o banco de dados.
+  List<Arvore> arvores;
+
   Parcela({
     this.dbId,
     this.idFazenda,
@@ -52,8 +54,10 @@ class Parcela {
     this.largura,
     this.comprimento,
     this.raio,
+    this.arvores = const [], // Parâmetro novo com valor padrão
   });
 
+  // <<< MÉTODO 'copyWith' RESTAURADO >>>
   Parcela copyWith({
     int? dbId,
     String? idFazenda,
@@ -72,6 +76,7 @@ class Parcela {
     double? largura,
     double? comprimento,
     double? raio,
+    List<Arvore>? arvores, // Também pode copiar a lista de árvores se necessário
   }) {
     return Parcela(
       dbId: dbId ?? this.dbId,
@@ -91,10 +96,12 @@ class Parcela {
       largura: largura ?? this.largura,
       comprimento: comprimento ?? this.comprimento,
       raio: raio ?? this.raio,
+      arvores: arvores ?? this.arvores,
     );
   }
 
   Map<String, dynamic> toMap() {
+    // Este método não salva a lista de 'arvores', o que está correto.
     return {
       'id': dbId,
       'idFazenda': idFazenda,
@@ -117,6 +124,7 @@ class Parcela {
   }
 
   factory Parcela.fromMap(Map<String, dynamic> map) {
+    // A lista 'arvores' não é populada aqui, mas no DatabaseHelper, o que está correto.
     return Parcela(
       dbId: map['id'],
       idFazenda: map['idFazenda'],
@@ -141,3 +149,4 @@ class Parcela {
     );
   }
 }
+

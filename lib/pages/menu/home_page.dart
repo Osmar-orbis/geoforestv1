@@ -2,8 +2,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
-import 'package:geoforestcoletor/models/parcela_model.dart';
-import 'package:geoforestcoletor/pages/amostra/coleta_dados_page.dart';
 import 'package:geoforestcoletor/pages/amostra/lista_coletas_page.dart';
 import 'package:geoforestcoletor/pages/menu/configuracoes_page.dart';
 import 'package:geoforestcoletor/pages/menu/sobre_page.dart';
@@ -11,6 +9,7 @@ import 'package:geoforestcoletor/providers/map_provider.dart';
 import 'package:geoforestcoletor/services/export_service.dart';
 import 'package:geoforestcoletor/widgets/menu_card.dart';
 import 'package:provider/provider.dart';
+import 'package:geoforestcoletor/pages/analises/analise_selecao_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, required this.title});
@@ -57,18 +56,11 @@ class _HomePageState extends State<HomePage> {
   //   }
   // }
 
-  void _iniciarNovaColeta(BuildContext context) {
-    final novaParcelaAvulsa = Parcela(
-      nomeFazenda: '',
-      nomeTalhao: '',
-      idParcela: '',
-      areaMetrosQuadrados: 0,
-      status: StatusParcela.pendente,
-      dataColeta: DateTime.now(),
-      // REMOVIDO: isSynced: false,
-      // REMOVIDO: clientId: _currentClientId, // Se você adicionou o clientId, ele ainda pode ser útil para organização local ou exportação.
+   void _abrirAnalistaDeDados(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const AnaliseSelecaoPage()),
     );
-    Navigator.push(context, MaterialPageRoute(builder: (context) => ColetaDadosPage(parcelaParaEditar: novaParcelaAvulsa)));
   }
 
   void _mostrarDialogoExportacao(BuildContext context) {
@@ -88,7 +80,7 @@ class _HomePageState extends State<HomePage> {
           crossAxisCount: 2, crossAxisSpacing: 12.0, mainAxisSpacing: 12.0, childAspectRatio: 1.0,
           children: [
             MenuCard(icon: Icons.explore_outlined, label: 'Navegação', onTap: () => Navigator.pushNamed(context, '/map_import')),
-            MenuCard(icon: Icons.add_location_alt_outlined, label: 'Nova Coleta', onTap: () => _iniciarNovaColeta(context)),
+            MenuCard(icon: Icons.insights_outlined, label: 'GeoForest Analista',  onTap: () => _abrirAnalistaDeDados(context)),
             MenuCard(icon: Icons.checklist_rtl_outlined, label: 'Painel de Coletas', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ListaColetasPage(title: 'Painel de Coletas')))),
             // REMOVIDO: MenuCard de Sincronizar Dados
             // MenuCard(
