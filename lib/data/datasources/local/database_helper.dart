@@ -31,11 +31,10 @@ class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._privateConstructor();
   static Database? _database;
 
-  // Adição para permitir o acesso via DatabaseHelper.instance
   static DatabaseHelper get instance => _instance;
 
   DatabaseHelper._privateConstructor();
-  factory DatabaseHelper() => _instance; // Mantém o factory constructor para compatibilidade
+  factory DatabaseHelper() => _instance;
 
   Future<Database> get database async => _database ??= await _initDatabase();
 
@@ -46,7 +45,6 @@ class DatabaseHelper {
     });
     return await openDatabase(
       join(await getDatabasesPath(), 'geoforestcoletor.db'),
-      // 1. VERSÃO DO BANCO INCREMENTADA PARA 13
       version: 13,
       onConfigure: _onConfigure,
       onCreate: _onCreate,
@@ -77,7 +75,7 @@ class DatabaseHelper {
         largura REAL,
         comprimento REAL,
         raio REAL,
-        isSynced INTEGER DEFAULT 0 NOT NULL -- <<< 2. COLUNA ADICIONADA PARA NOVAS INSTALAÇÕES
+        isSynced INTEGER DEFAULT 0 NOT NULL
       )
     ''');
     await db.execute('''
@@ -110,69 +108,62 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Migrações antigas mantidas por segurança
+    // Migrações antigas mantidas por segurança, com try-catch para evitar falhas
     if (oldVersion < 2) { 
         await db.execute('''CREATE TABLE arvores (id INTEGER PRIMARY KEY AUTOINCREMENT, parcelaId INTEGER NOT NULL, cap REAL NOT NULL, altura REAL, linha INTEGER NOT NULL, posicaoNaLinha INTEGER NOT NULL, fimDeLinha INTEGER NOT NULL, dominante INTEGER NOT NULL, status TEXT NOT NULL, FOREIGN KEY (parcelaId) REFERENCES parcelas (id) ON DELETE CASCADE)''');
     }
-    if (oldVersion < 4) { try { await db.execute('ALTER TABLE arvores ADD COLUMN status2 TEXT'); } catch (e) { debugPrint("$e"); } }
+    if (oldVersion < 4) { try { await db.execute('ALTER TABLE arvores ADD COLUMN status2 TEXT'); } catch (e) { debugPrint("Migration Error (ignorable): $e"); } }
     if (oldVersion < 5) { await db.execute('DROP TABLE IF EXISTS fustes'); }
-    if (oldVersion < 6) { try { await db.execute('ALTER TABLE parcelas ADD COLUMN exportada INTEGER DEFAULT 0 NOT NULL'); } catch (e) { debugPrint("$e"); } }
-    if (oldVersion < 7) { try { await db.execute('''CREATE TABLE cubagens_arvores(id INTEGER PRIMARY KEY AUTOINCREMENT, identificador TEXT NOT NULL, alturaTotal REAL NOT NULL, tipoMedidaCAP TEXT NOT NULL, valorCAP REAL NOT NULL, alturaBase REAL NOT NULL, classe TEXT)'''); } catch(e) { debugPrint("$e"); } }
+    if (oldVersion < 6) { try { await db.execute('ALTER TABLE parcelas ADD COLUMN exportada INTEGER DEFAULT 0 NOT NULL'); } catch (e) { debugPrint("Migration Error (ignorable): $e"); } }
+    if (oldVersion < 7) { try { await db.execute('''CREATE TABLE cubagens_arvores(id INTEGER PRIMARY KEY AUTOINCREMENT, identificador TEXT NOT NULL, alturaTotal REAL NOT NULL, tipoMedidaCAP TEXT NOT NULL, valorCAP REAL NOT NULL, alturaBase REAL NOT NULL, classe TEXT)'''); } catch(e) { debugPrint("Migration Error (ignorable): $e"); } }
     if (oldVersion < 8) {
       await db.execute('DROP TABLE IF EXISTS cubagens_secoes');
       await db.execute('''CREATE TABLE cubagens_secoes(id INTEGER PRIMARY KEY AUTOINCREMENT, cubagemArvoreId INTEGER NOT NULL, alturaMedicao REAL NOT NULL, circunferencia REAL, casca1_mm REAL, casca2_mm REAL, FOREIGN KEY (cubagemArvoreId) REFERENCES cubagens_arvores (id) ON DELETE CASCADE)''');
       await db.execute('CREATE INDEX idx_cubagens_secoes_cubagemArvoreId ON cubagens_secoes(cubagemArvoreId)');
     }
     if (oldVersion < 9) {
-      try { await db.execute('ALTER TABLE parcelas ADD COLUMN idFazenda TEXT'); } catch (e) { debugPrint("$e"); }
-      try { await db.execute('ALTER TABLE parcelas ADD COLUMN largura REAL'); } catch (e) { debugPrint("$e"); }
-      try { await db.execute('ALTER TABLE parcelas ADD COLUMN comprimento REAL'); } catch (e) { debugPrint("$e"); }
-      try { await db.execute('ALTER TABLE parcelas ADD COLUMN raio REAL'); } catch (e) { debugPrint("$e"); }
+      try { await db.execute('ALTER TABLE parcelas ADD COLUMN idFazenda TEXT'); } catch (e) { debugPrint("Migration Error (ignorable): $e"); }
+      try { await db.execute('ALTER TABLE parcelas ADD COLUMN largura REAL'); } catch (e) { debugPrint("Migration Error (ignorable): $e"); }
+      try { await db.execute('ALTER TABLE parcelas ADD COLUMN comprimento REAL'); } catch (e) { debugPrint("Migration Error (ignorable): $e"); }
+      try { await db.execute('ALTER TABLE parcelas ADD COLUMN raio REAL'); } catch (e) { debugPrint("Migration Error (ignorable): $e"); }
     }
     if (oldVersion < 10) {
-      try { await db.execute('ALTER TABLE cubagens_arvores ADD COLUMN id_fazenda TEXT'); } catch (e) { debugPrint("$e"); }
-      try { await db.execute('ALTER TABLE cubagens_arvores ADD COLUMN nome_fazenda TEXT'); } catch (e) { debugPrint("$e"); }
-      try { await db.execute('ALTER TABLE cubagens_arvores ADD COLUMN nome_talhao TEXT'); } catch (e) { debugPrint("$e"); }
+      try { await db.execute('ALTER TABLE cubagens_arvores ADD COLUMN id_fazenda TEXT'); } catch (e) { debugPrint("Migration Error (ignorable): $e"); }
+      try { await db.execute('ALTER TABLE cubagens_arvores ADD COLUMN nome_fazenda TEXT'); } catch (e) { debugPrint("Migration Error (ignorable): $e"); }
+      try { await db.execute('ALTER TABLE cubagens_arvores ADD COLUMN nome_talhao TEXT'); } catch (e) { debugPrint("Migration Error (ignorable): $e"); }
     }
     if (oldVersion < 12) {
-      try { await db.execute('ALTER TABLE cubagens_arvores ADD COLUMN exportada INTEGER DEFAULT 0 NOT NULL;'); } catch (e) { debugPrint("$e"); }
+      try { await db.execute('ALTER TABLE cubagens_arvores ADD COLUMN exportada INTEGER DEFAULT 0 NOT NULL;'); } catch (e) { debugPrint("Migration Error (ignorable): $e"); }
     }
-
-    // 3. NOVA MIGRAÇÃO PARA ADICIONAR A COLUNA EM BANCOS EXISTENTES
     if (oldVersion < 13) {
       try {
         await db.execute('ALTER TABLE parcelas ADD COLUMN isSynced INTEGER DEFAULT 0 NOT NULL;');
         debugPrint('Coluna "isSynced" adicionada à tabela "parcelas" com sucesso.');
       } catch (e) {
-        // Ignora o erro se a coluna já existir (não deve acontecer, mas é seguro)
         debugPrint('Erro ao adicionar coluna isSynced (pode já existir): $e');
       }
     }
   }
 
   // ==========================================================
-  // 4. NOVOS MÉTODOS PARA SINCRONIZAÇÃO ADICIONADOS AQUI
+  // MÉTODOS DE SINCRONIZAÇÃO
   // ==========================================================
 
-  /// Busca no banco de dados todas as parcelas que ainda não foram sincronizadas.
-  /// Uma parcela é considerada não sincronizada se o campo `isSynced` for 0.
   Future<List<Parcela>> getUnsyncedParcelas() async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'parcelas',
       where: 'isSynced = ?',
-      whereArgs: [0], // 0 representa 'false'
+      whereArgs: [0],
     );
     return List.generate(maps.length, (i) => Parcela.fromMap(maps[i]));
   }
 
-  /// Marca uma parcela específica como sincronizada no banco de dados local.
-  /// Altera o campo `isSynced` para 1 (true) para o ID da parcela fornecido.
   Future<void> markParcelaAsSynced(int id) async {
     final db = await database;
     await db.update(
       'parcelas',
-      {'isSynced': 1}, // 1 representa 'true'
+      {'isSynced': 1},
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -180,21 +171,13 @@ class DatabaseHelper {
   }
 
   // ==========================================================
-  // O RESTO DA SUA CLASSE CONTINUA IGUAL
+  // MÉTODOS CRUD E HELPER (PARCELAS E ÁRVORES)
   // ==========================================================
 
-  /// Apaga TODAS as parcelas e, por cascata, todas as árvores.
   Future<void> limparTodasAsParcelas() async {
     final db = await database;
     await db.delete('parcelas');
     debugPrint('Tabela de parcelas e árvores limpa.');
-  }
-
-  /// Apaga TODAS as cubagens e, por cascata, todas as seções.
-  Future<void> limparTodasAsCubagens() async {
-    final db = await database;
-    await db.delete('cubagens_arvores');
-    debugPrint('Tabela de cubagens e seções limpa.');
   }
 
   Future<void> saveBatchParcelas(List<Parcela> parcelas) async {
@@ -225,7 +208,6 @@ class DatabaseHelper {
     final db = await database;
     await db.transaction((txn) async {
       int parcelaId;
-      // Garante que a parcela seja marcada como não sincronizada ao salvar/atualizar
       parcela.isSynced = false; 
       final parcelaMap = parcela.toMap();
       final dataColetaAtual = parcela.dataColeta ?? DateTime.now();
@@ -281,37 +263,182 @@ class DatabaseHelper {
     final db = await database;
     return await db.update('parcelas', parcela.toMap(), where: 'id = ?', whereArgs: [parcela.dbId]);
   }
+  
+  Future<int> limparParcelasExportadas() async {
+    final db = await database;
+    final count = await db.delete('parcelas', where: 'exportada = ?', whereArgs: [1]);
+    debugPrint('$count parcelas exportadas foram apagadas.');
+    return count;
+  }
 
-  // Demais métodos (exportar, limpar, etc.) continuam os mesmos
-  // ...
+  // ==========================================================
+  // MÉTODOS CRUD E HELPER (CUBAGEM)
+  // ==========================================================
+  
+  Future<void> limparTodasAsCubagens() async {
+    final db = await database;
+    await db.delete('cubagens_arvores');
+    debugPrint('Tabela de cubagens e seções limpa.');
+  }
+
+  Future<void> salvarCubagemCompleta(CubagemArvore arvore, List<CubagemSecao> secoes) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      int arvoreId;
+      final dbMap = arvore.toMap();
+      if (arvore.id == null) {
+        arvoreId = await txn.insert('cubagens_arvores', dbMap);
+        arvore.id = arvoreId;
+      } else {
+        arvoreId = arvore.id!;
+        await txn.update('cubagens_arvores', dbMap, where: 'id = ?', whereArgs: [arvoreId]);
+      }
+      await txn.delete('cubagens_secoes', where: 'cubagemArvoreId = ?', whereArgs: [arvoreId]);
+      for (var secao in secoes) {
+        secao.cubagemArvoreId = arvoreId;
+        await txn.insert('cubagens_secoes', secao.toMap());
+      }
+    });
+  }
+
+  Future<List<CubagemArvore>> getTodasCubagens() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('cubagens_arvores', orderBy: 'id DESC');
+    return List.generate(maps.length, (i) => CubagemArvore.fromMap(maps[i]));
+  }
+
+  Future<List<CubagemSecao>> getSecoesPorArvoreId(int arvoreId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('cubagens_secoes', where: 'cubagemArvoreId = ?', whereArgs: [arvoreId], orderBy: 'alturaMedicao ASC');
+    return List.generate(maps.length, (i) => CubagemSecao.fromMap(maps[i]));
+  }
+
+  Future<void> deletarCubagem(int id) async {
+    final db = await database;
+    await db.delete('cubagens_arvores', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> deletarMultiplasCubagens(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    await db.delete(
+      'cubagens_arvores',
+      where: 'id IN (${List.filled(ids.length, '?').join(',')})',
+      whereArgs: ids,
+    );
+  }
+
+  Future<void> exportarUmaCubagem(BuildContext context, int arvoreId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> arvoreMaps = await db.query('cubagens_arvores', where: 'id = ?', whereArgs: [arvoreId]);
+
+    if (arvoreMaps.isEmpty) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Árvore não encontrada.')));
+      return;
+    }
+    
+    final arvore = CubagemArvore.fromMap(arvoreMaps.first);
+    final secoes = await getSecoesPorArvoreId(arvore.id!);
+
+    List<List<dynamic>> rows = [];
+    rows.add(['id_fazenda', 'fazenda', 'talhao', 'identificador_arvore', 'altura_total_m', 'tipo_medida_cap', 'valor_cap_cm', 'altura_base_m', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
+    
+    if (secoes.isEmpty) {
+      rows.add([arvore.idFazenda, arvore.nomeFazenda, arvore.nomeTalhao, arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase, null, null, null, null, null, null]);
+    } else {
+      for (var secao in secoes) {
+        rows.add([ arvore.idFazenda, arvore.nomeFazenda, arvore.nomeTalhao, arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase, secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm, secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2) ]);
+      }
+    }
+
+    final csvData = const ListToCsvConverter().convert(rows);
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final hoje = DateTime.now();
+      final nomePastaData = DateFormat('yyyy-MM-dd').format(hoje);
+      final pastaDoDia = Directory('${directory.path}/$nomePastaData');
+      if (!await pastaDoDia.exists()) await pastaDoDia.create(recursive: true);
+      final sanitizedId = arvore.identificador.replaceAll(RegExp(r'[\\/*?:"<>|]'), '_');
+      final fileName = 'Cubagem_${sanitizedId}_${DateFormat('HH-mm-ss').format(hoje)}.csv';
+      final path = '${pastaDoDia.path}/$fileName';
+      await File(path).writeAsString(csvData);
+      if (context.mounted) {
+        await Share.shareXFiles([XFile(path)], subject: 'Exportação de Cubagem: ${arvore.identificador}');
+      }
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao exportar: $e')));
+    }
+  }
+
+
+  // =========================================================================
+  // ---> INÍCIO DOS MÉTODOS DE EXPORTAÇÃO ATUALIZADOS <---
+  // =========================================================================
+
+  /// Exporta os dados das coletas de parcelas com base na escolha do usuário.
   Future<void> exportarDados(BuildContext context) async {
     final tipoExportacao = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Exportar Coletas de Parcela'),
-        content: const Text('Quais parcelas você deseja exportar?'),
+        content: const Text('Selecione o tipo de exportação:'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, 'nao_exportadas'), child: const Text('Apenas Novas')),
-          TextButton(onPressed: () => Navigator.pop(context, 'todas'), child: const Text('Exportar Tudo')),
-          TextButton(onPressed: () => Navigator.pop(context, 'cancelar'), child: const Text('Cancelar', style: TextStyle(color: Colors.grey))),
+          TextButton(
+            child: const Text('Novas Concluídas'),
+            onPressed: () => Navigator.pop(context, 'novas_concluidas'),
+          ),
+          TextButton(
+            child: const Text('Re-exportar Todas Concluídas'),
+            onPressed: () => Navigator.pop(context, 'todas_concluidas'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'cancelar'),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
         ],
       ),
     );
-    if (tipoExportacao == null || tipoExportacao == 'cancelar') return;
 
-    final db = await database;
-    final List<Map<String, dynamic>> parcelasMaps = (tipoExportacao == 'nao_exportadas')
-      ? await db.query('parcelas', where: 'exportada = 0')
-      : await db.query('parcelas');
+    if (tipoExportacao == null || tipoExportacao == 'cancelar' || !context.mounted) return;
 
-    if (parcelasMaps.isEmpty) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhuma parcela para exportar neste critério.'), backgroundColor: Colors.orange));
-      return;
-    }
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Buscando dados para exportação...')));
 
     try {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gerando arquivo CSV de parcelas...')));
+      final db = await database;
+      final List<Map<String, dynamic>> parcelasMaps;
+
+      if (tipoExportacao == 'novas_concluidas') {
+        // Pega parcelas que estão CONCLUÍDAS E AINDA NÃO FORAM EXPORTADAS.
+        parcelasMaps = await db.query(
+          'parcelas',
+          where: 'status = ? AND exportada = ?',
+          whereArgs: [StatusParcela.concluida.name, 0], // 0 = false
+        );
+      } else { // 'todas_concluidas'
+        // Pega TODAS as parcelas concluídas, ignorando se já foram exportadas.
+        parcelasMaps = await db.query(
+          'parcelas',
+          where: 'status = ?',
+          whereArgs: [StatusParcela.concluida.name],
+        );
+      }
+
+      if (parcelasMaps.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Nenhuma parcela encontrada para este critério.'),
+            backgroundColor: Colors.orange,
+          ));
+        }
+        return;
+      }
       
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).removeCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gerando arquivo CSV...')));
+      }
+
       final prefs = await SharedPreferences.getInstance();
       final nomeLider = prefs.getString('nome_lider') ?? 'N/A';
       final nomesAjudantes = prefs.getString('nomes_ajudantes') ?? 'N/A';
@@ -361,112 +488,86 @@ class DatabaseHelper {
         ScaffoldMessenger.of(context).removeCurrentSnackBar();
         await Share.shareXFiles([XFile(path)], subject: 'Exportação GeoForest');
       }
+
     } catch (e, s) {
       debugPrint('Erro na exportação de parcelas: $e\n$s');
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Falha na exportação: ${e.toString()}'), backgroundColor: Colors.red));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).removeCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Falha na exportação: ${e.toString()}'), backgroundColor: Colors.red));
+      }
     }
   }
-  
-  Future<int> limparParcelasExportadas() async {
-    final db = await database;
-    final count = await db.delete('parcelas', where: 'exportada = ?', whereArgs: [1]);
-    debugPrint('$count parcelas exportadas foram apagadas.');
-    return count;
-  }
 
-  // --- MÉTODOS DE CUBAGEM ---
-  Future<void> salvarCubagemCompleta(CubagemArvore arvore, List<CubagemSecao> secoes) async {
-    final db = await database;
-    await db.transaction((txn) async {
-      int arvoreId;
-      final dbMap = arvore.toMap();
-      if (arvore.id == null) {
-        arvoreId = await txn.insert('cubagens_arvores', dbMap);
-        arvore.id = arvoreId;
-      } else {
-        arvoreId = arvore.id!;
-        await txn.update('cubagens_arvores', dbMap, where: 'id = ?', whereArgs: [arvoreId]);
-      }
-      await txn.delete('cubagens_secoes', where: 'cubagemArvoreId = ?', whereArgs: [arvoreId]);
-      for (var secao in secoes) {
-        secao.cubagemArvoreId = arvoreId;
-        await txn.insert('cubagens_secoes', secao.toMap());
-      }
-    });
-  }
-
-  Future<List<CubagemArvore>> getTodasCubagens() async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query('cubagens_arvores', orderBy: 'id DESC');
-    return List.generate(maps.length, (i) => CubagemArvore.fromMap(maps[i]));
-  }
-
-  Future<List<CubagemSecao>> getSecoesPorArvoreId(int arvoreId) async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query('cubagens_secoes', where: 'cubagemArvoreId = ?', whereArgs: [arvoreId], orderBy: 'alturaMedicao ASC');
-    return List.generate(maps.length, (i) => CubagemSecao.fromMap(maps[i]));
-  }
-
-  Future<void> deletarCubagem(int id) async {
-    final db = await database;
-    await db.delete('cubagens_arvores', where: 'id = ?', whereArgs: [id]);
-  }
-
-  Future<void> deletarMultiplasCubagens(List<int> ids) async {
-    if (ids.isEmpty) return;
-    final db = await database;
-    await db.delete(
-      'cubagens_arvores',
-      where: 'id IN (${List.filled(ids.length, '?').join(',')})',
-      whereArgs: ids,
-    );
-  }
-
+  /// Exporta os dados das cubagens rigorosas com base na escolha do usuário.
   Future<void> exportarCubagens(BuildContext context) async {
     final tipoExportacao = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Exportar Cubagens'),
-        content: const Text('Quais cubagens você deseja exportar?'),
+        content: const Text('Selecione o tipo de exportação:'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, 'nao_exportadas'), child: const Text('Apenas Novas')),
-          TextButton(onPressed: () => Navigator.pop(context, 'todas'), child: const Text('Exportar Tudo')),
-          TextButton(onPressed: () => Navigator.pop(context, 'cancelar'), child: const Text('Cancelar', style: TextStyle(color: Colors.grey))),
+          TextButton(
+            child: const Text('Exportar Novas'),
+            onPressed: () => Navigator.pop(context, 'novas'),
+          ),
+          TextButton(
+            child: const Text('Re-exportar Todas'),
+            onPressed: () => Navigator.pop(context, 'todas'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'cancelar'),
+            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+          ),
         ],
       ),
     );
-    if (tipoExportacao == null || tipoExportacao == 'cancelar') return;
+    if (tipoExportacao == null || tipoExportacao == 'cancelar' || !context.mounted) return;
 
-    final db = await database;
-    final List<Map<String, dynamic>> arvoresMaps = (tipoExportacao == 'nao_exportadas')
-      ? await db.query('cubagens_arvores', where: 'exportada = 0')
-      : await db.query('cubagens_arvores');
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Buscando dados de cubagem...')));
     
-    if (arvoresMaps.isEmpty) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhuma cubagem para exportar neste critério.'), backgroundColor: Colors.orange));
-      return;
-    }
-    
-    List<CubagemArvore> arvores = arvoresMaps.map((map) => CubagemArvore.fromMap(map)).toList();
-    List<int> idsParaMarcar = [];
+    try {
+      final db = await database;
+      final List<Map<String, dynamic>> arvoresMaps;
 
-    List<List<dynamic>> rows = [];
-    rows.add(['id_arvore_db', 'id_fazenda', 'fazenda', 'talhao', 'identificador_arvore', 'altura_total_m', 'cap_cm', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
-    
-    for (var arvore in arvores) {
-      idsParaMarcar.add(arvore.id!);
-      final secoes = await getSecoesPorArvoreId(arvore.id!);
-      if (secoes.isEmpty) {
-         rows.add([arvore.id, arvore.idFazenda, arvore.nomeFazenda, arvore.nomeTalhao, arvore.identificador, arvore.alturaTotal, arvore.valorCAP, null, null, null, null, null, null]);
-      } else {
-        for (var secao in secoes) {
-          rows.add([ arvore.id, arvore.idFazenda, arvore.nomeFazenda, arvore.nomeTalhao, arvore.identificador, arvore.alturaTotal, arvore.valorCAP, secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm, secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2) ]);
+      if (tipoExportacao == 'novas') {
+        // Pega cubagens que AINDA NÃO FORAM EXPORTADAS.
+        arvoresMaps = await db.query('cubagens_arvores', where: 'exportada = ?', whereArgs: [0]);
+      } else { // 'todas'
+        // Pega TODAS as cubagens, sem filtro.
+        arvoresMaps = await db.query('cubagens_arvores');
+      }
+      
+      if (arvoresMaps.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhuma cubagem para exportar neste critério.'), backgroundColor: Colors.orange));
+        }
+        return;
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).removeCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gerando arquivo CSV de cubagens...')));
+      }
+      
+      List<CubagemArvore> arvores = arvoresMaps.map((map) => CubagemArvore.fromMap(map)).toList();
+      List<int> idsParaMarcar = [];
+
+      List<List<dynamic>> rows = [];
+      rows.add(['id_arvore_db', 'id_fazenda', 'fazenda', 'talhao', 'identificador_arvore', 'altura_total_m', 'cap_cm', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
+      
+      for (var arvore in arvores) {
+        idsParaMarcar.add(arvore.id!);
+        final secoes = await getSecoesPorArvoreId(arvore.id!);
+        if (secoes.isEmpty) {
+          rows.add([arvore.id, arvore.idFazenda, arvore.nomeFazenda, arvore.nomeTalhao, arvore.identificador, arvore.alturaTotal, arvore.valorCAP, null, null, null, null, null, null]);
+        } else {
+          for (var secao in secoes) {
+            rows.add([ arvore.id, arvore.idFazenda, arvore.nomeFazenda, arvore.nomeTalhao, arvore.identificador, arvore.alturaTotal, arvore.valorCAP, secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm, secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2) ]);
+          }
         }
       }
-    }
-
-    try {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gerando arquivo CSV de cubagens...')));
+      
       final directory = await getApplicationDocumentsDirectory();
       final hoje = DateTime.now();
       final nomePastaData = DateFormat('yyyy-MM-dd').format(hoje);
@@ -485,49 +586,15 @@ class DatabaseHelper {
       }
     } catch (e, s) {
         debugPrint('Erro na exportação de cubagens: $e\n$s');
-        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Falha na exportação de cubagens: ${e.toString()}'), backgroundColor: Colors.red));
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Falha na exportação de cubagens: ${e.toString()}'), backgroundColor: Colors.red));
+        }
     }
   }
 
-  Future<void> exportarUmaCubagem(BuildContext context, int arvoreId) async {
-    final db = await database;
-    final List<Map<String, dynamic>> arvoreMaps = await db.query('cubagens_arvores', where: 'id = ?', whereArgs: [arvoreId]);
+  // =========================================================================
+  // ---> FIM DOS MÉTODOS DE EXPORTAÇÃO ATUALIZADOS <---
+  // =========================================================================
 
-    if (arvoreMaps.isEmpty) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Árvore não encontrada.')));
-      return;
-    }
-    
-    final arvore = CubagemArvore.fromMap(arvoreMaps.first);
-    final secoes = await getSecoesPorArvoreId(arvore.id!);
-
-    List<List<dynamic>> rows = [];
-    rows.add(['id_fazenda', 'fazenda', 'talhao', 'identificador_arvore', 'altura_total_m', 'tipo_medida_cap', 'valor_cap_cm', 'altura_base_m', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
-    
-    if (secoes.isEmpty) {
-      rows.add([arvore.idFazenda, arvore.nomeFazenda, arvore.nomeTalhao, arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase, null, null, null, null, null, null]);
-    } else {
-      for (var secao in secoes) {
-        rows.add([ arvore.idFazenda, arvore.nomeFazenda, arvore.nomeTalhao, arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase, secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm, secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2) ]);
-      }
-    }
-
-    final csvData = const ListToCsvConverter().convert(rows);
-    try {
-      final directory = await getApplicationDocumentsDirectory();
-      final hoje = DateTime.now();
-      final nomePastaData = DateFormat('yyyy-MM-dd').format(hoje);
-      final pastaDoDia = Directory('${directory.path}/$nomePastaData');
-      if (!await pastaDoDia.exists()) await pastaDoDia.create(recursive: true);
-      final sanitizedId = arvore.identificador.replaceAll(RegExp(r'[\\/*?:"<>|]'), '_');
-      final fileName = 'Cubagem_${sanitizedId}_${DateFormat('HH-mm-ss').format(hoje)}.csv';
-      final path = '${pastaDoDia.path}/$fileName';
-      await File(path).writeAsString(csvData);
-      if (context.mounted) {
-        await Share.shareXFiles([XFile(path)], subject: 'Exportação de Cubagem: ${arvore.identificador}');
-      }
-    } catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao exportar: $e')));
-    }
-  }
 }

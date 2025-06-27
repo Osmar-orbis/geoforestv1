@@ -14,46 +14,70 @@ class ExportService {
   Future<void> exportProjectAsGeoJson({
     required BuildContext context,
     required List<Polygon> areaPolygons,
-    required List<SamplePoint> samplePoints,
+    required List<SamplePoint> samplePoints, // Recebe todos os pontos
     required String farmName,
     required String blockName,
   }) async {
-    if (areaPolygons.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhuma área de projeto para exportar.')));
+
+    // =========================================================================
+    // ---> INÍCIO DA MUDANÇA: FILTRAGEM DOS PONTOS <---
+    // =========================================================================
+
+    // 1. FILTRAR A LISTA: Criamos uma nova lista contendo apenas os pontos
+    // cujo status é 'completed'.
+    final List<SamplePoint> pontosConcluidos = samplePoints
+        .where((ponto) => ponto.status == SampleStatus.completed)
+        .toList();
+
+    // 2. VERIFICAR: Se não houver polígonos da área E nenhum ponto concluído,
+    // não há nada para exportar. Avisamos o usuário e paramos a função.
+    if (areaPolygons.isEmpty && pontosConcluidos.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Nenhuma área ou amostra concluída para exportar.'),
+          backgroundColor: Colors.orange,
+        ));
+      }
       return;
     }
+    
+    // Opcional: Avisar se apenas a área será exportada, pois não há pontos concluídos.
+    if (areaPolygons.isNotEmpty && pontosConcluidos.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Aviso: Nenhuma amostra concluída foi encontrada. Exportando apenas a área do projeto.'),
+          backgroundColor: Colors.orange,
+        ));
+      }
+    }
+
+    // =========================================================================
+    // ---> FIM DA MUDANÇA <---
+    // =========================================================================
 
     try {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gerando arquivo de projeto GeoJSON...')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gerando arquivo GeoJSON...')));
       }
 
-      // 1. Criar a estrutura base do GeoJSON (FeatureCollection)
       final Map<String, dynamic> geoJson = {
         'type': 'FeatureCollection',
         'features': <Map<String, dynamic>>[],
       };
 
-      // 2. Adicionar os polígonos da área como Features
+      // Adicionar os polígonos da área (sem alterações nesta parte)
       for (final polygon in areaPolygons) {
         final coordinates = polygon.points.map((p) => [p.longitude, p.latitude]).toList();
-        
         geoJson['features'].add({
           'type': 'Feature',
-          'geometry': {
-            'type': 'Polygon',
-            'coordinates': [coordinates], // GeoJSON Polygon precisa de um array de anéis
-          },
-          'properties': {
-            'type': 'area',
-            'farmName': farmName,
-            'blockName': blockName,
-          },
+          'geometry': {'type': 'Polygon', 'coordinates': [coordinates]},
+          'properties': {'type': 'area', 'farmName': farmName, 'blockName': blockName},
         });
       }
 
-      // 3. Adicionar os pontos de amostragem como Features
-      for (final point in samplePoints) {
+      // ---> MUDANÇA AQUI: Agora iteramos sobre a LISTA FILTRADA <---
+      // Adicionar APENAS os pontos de amostragem CONCLUÍDOS como Features
+      for (final point in pontosConcluidos) { // Usando a lista 'pontosConcluidos'
         geoJson['features'].add({
           'type': 'Feature',
           'geometry': {
@@ -63,16 +87,16 @@ class ExportService {
           'properties': {
             'type': 'plot',
             'id': point.id,
-            'status': point.status.name,
+            'status': point.status.name, // Vai salvar como 'completed'
+            // Você pode adicionar mais dados do DB aqui se precisar
           },
         });
       }
 
-      // 4. Converter o mapa Dart para uma string JSON formatada
+      // O resto do código permanece o mesmo...
       const jsonEncoder = JsonEncoder.withIndent('  ');
       final geoJsonString = jsonEncoder.convert(geoJson);
 
-      // 5. Salvar e compartilhar o arquivo
       final directory = await getApplicationDocumentsDirectory();
       final hoje = DateTime.now();
       final nomePastaData = DateFormat('yyyy-MM-dd').format(hoje);
