@@ -140,8 +140,13 @@ class MapProvider with ChangeNotifier {
       switch (parcela.status) {
         case StatusParcela.concluida: status = SampleStatus.completed; break;
         case StatusParcela.emAndamento: status = SampleStatus.open; break;
-        case StatusParcela.pendente: status = SampleStatus.untouched;
+        case StatusParcela.pendente: status = SampleStatus.untouched;        
       }
+
+      if (parcela.exportada) {
+      status = SampleStatus.exported;
+    }
+    
       return SamplePoint(
         id: int.tryParse(parcela.idParcela) ?? 0,
         position: LatLng(parcela.latitude ?? 0, parcela.longitude ?? 0),

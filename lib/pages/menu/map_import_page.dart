@@ -1,4 +1,4 @@
-// lib/pages/menu/map_import_page.dart
+// lib/pages/menu/map_import_page.dart (VERSÃO ATUALIZADA SEM CACHE)
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,11 +31,13 @@ class _MapImportPageState extends State<MapImportPage> {
       final provider = context.read<MapProvider>();
       await provider.loadLastProject();
       if (mounted && provider.polygons.isNotEmpty) {
-        _mapController.fitBounds(
-          LatLngBounds.fromPoints(
-            provider.polygons.expand((p) => p.points).toList(),
+        _mapController.fitCamera(
+          CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints(
+              provider.polygons.expand((p) => p.points).toList(),
+            ),
+            padding: const EdgeInsets.all(50.0),
           ),
-          options: const FitBoundsOptions(padding: EdgeInsets.all(50.0)),
         );
       }
     });
@@ -43,32 +45,35 @@ class _MapImportPageState extends State<MapImportPage> {
 
   Color _getMarkerColor(SampleStatus status) {
     switch (status) {
-      case SampleStatus.open: return Colors.orange.shade300;
-      case SampleStatus.completed: return Colors.green;
-      case SampleStatus.exported: return Colors.blue;
+      case SampleStatus.open:
+        return Colors.orange.shade300;
+      case SampleStatus.completed:
+        return Colors.green;
+      case SampleStatus.exported:
+        return Colors.blue;
       case SampleStatus.untouched:
-      return Colors.white;
+        return Colors.white;
     }
   }
 
   Color _getMarkerTextColor(SampleStatus status) {
     switch (status) {
       case SampleStatus.open:
-      case SampleStatus.untouched: return Colors.black;
+      case SampleStatus.untouched:
+        return Colors.black;
       case SampleStatus.completed:
       case SampleStatus.exported:
-      return Colors.white;
+        return Colors.white;
     }
   }
 
   Future<void> _handleImport() async {
     final provider = context.read<MapProvider>();
-    final bool success = await provider.importAndClear(); 
+    final bool success = await provider.importAndClear();
     if (!mounted) return;
 
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arquivo lido com sucesso!')));
-      
       if (provider.samplePoints.isNotEmpty && provider.polygons.isEmpty) {
         final projectData = await _showDataInputDialog(isImport: true);
         if (projectData != null) {
@@ -79,20 +84,24 @@ class _MapImportPageState extends State<MapImportPage> {
           );
         }
       }
-
       if (provider.polygons.isNotEmpty) {
-        _mapController.fitBounds(LatLngBounds.fromPoints(provider.polygons.expand((p) => p.points).toList()), options: const FitBoundsOptions(padding: EdgeInsets.all(50.0)));
+        _mapController.fitCamera(
+          CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints(provider.polygons.expand((p) => p.points).toList()),
+            padding: const EdgeInsets.all(50.0),
+          ),
+        );
       }
-
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Nenhum polígono ou ponto válido foi encontrado no arquivo.")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Nenhum polígono ou ponto válido foi encontrado no arquivo.")));
+      }
     }
   }
 
   Future<void> _handleGenerateSamples() async {
     final sampleData = await _showDataInputDialog();
     if (sampleData == null) return;
-    
     final provider = context.read<MapProvider>();
     final count = await provider.generateSamples(
       hectaresPerSample: sampleData['hectares'],
@@ -100,7 +109,6 @@ class _MapImportPageState extends State<MapImportPage> {
       blockName: sampleData['blockName'],
       idFazenda: sampleData['farmId'],
     );
-
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$count amostras geradas!')));
     }
@@ -123,13 +131,34 @@ class _MapImportPageState extends State<MapImportPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextFormField(controller: farmController, autofocus: true, decoration: const InputDecoration(labelText: 'Nome da Fazenda'), validator: (value) => (value == null || value.isEmpty) ? 'Campo obrigatório' : null),
+                TextFormField(
+                  controller: farmController,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'Nome da Fazenda'),
+                  validator: (value) => (value == null || value.isEmpty) ? 'Campo obrigatório' : null,
+                ),
                 const SizedBox(height: 8),
-                TextFormField(controller: farmIdController, decoration: const InputDecoration(labelText: 'Código da Fazenda (Opcional)')),
+                TextFormField(
+                  controller: farmIdController,
+                  decoration: const InputDecoration(labelText: 'Código da Fazenda (Opcional)'),
+                ),
                 const SizedBox(height: 8),
-                TextFormField(controller: blockController, decoration: const InputDecoration(labelText: 'Nome do Talhão'), validator: (value) => (value == null || value.isEmpty) ? 'Campo obrigatório' : null),
+                TextFormField(
+                  controller: blockController,
+                  decoration: const InputDecoration(labelText: 'Nome do Talhão'),
+                  validator: (value) => (value == null || value.isEmpty) ? 'Campo obrigatório' : null,
+                ),
                 if (!isImport)
-                  TextFormField(controller: densityController, decoration: const InputDecoration(labelText: 'Hectares por amostra', suffixText: 'ha'), keyboardType: const TextInputType.numberWithOptions(decimal: true), validator: (value) { if (value == null || value.isEmpty) return 'Campo obrigatório'; if (double.tryParse(value.replaceAll(',', '.')) == null) return 'Número inválido'; return null; }),
+                  TextFormField(
+                    controller: densityController,
+                    decoration: const InputDecoration(labelText: 'Hectares por amostra', suffixText: 'ha'),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) return 'Campo obrigatório';
+                      if (double.tryParse(value.replaceAll(',', '.')) == null) return 'Número inválido';
+                      return null;
+                    },
+                  ),
               ],
             ),
           ),
@@ -154,53 +183,39 @@ class _MapImportPageState extends State<MapImportPage> {
     );
   }
 
-  void _confirmClearMap() {
-    showDialog(context: context, builder: (ctx) => AlertDialog(
-        title: const Text('Limpar Mapa?'), content: const Text('Isso removerá todos os polígonos e pontos de amostra importados. Deseja continuar?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancelar')),
-          TextButton(child: const Text('Limpar', style: TextStyle(color: Colors.red)), onPressed: () { context.read<MapProvider>().clearMapData(); Navigator.of(ctx).pop(); }),
-        ],
-      ),
-    );
-  }
-
   Future<void> _handleLocationButtonPressed() async {
     final provider = context.read<MapProvider>();
-
     if (provider.isFollowingUser) {
       provider.toggleFollowingUser();
       return;
     }
-
-    bool serviceEnabled;
-    LocationPermission permission;
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Serviço de GPS desabilitado.')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Serviço de GPS desabilitado.')));
       return;
     }
-    permission = await Geolocator.checkPermission();
+    LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permissão de localização negada.')));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permissão de localização negada.')));
         return;
       }
     }
     if (permission == LocationPermission.deniedForever) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permissão negada permanentemente.')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permissão negada permanentemente.')));
       return;
-    } 
+    }
+
     try {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Buscando sua localização...')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Buscando sua localização...')));
       Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       _mapController.move(LatLng(position.latitude, position.longitude), 16.0);
       provider.updateUserPosition(position);
       provider.toggleFollowingUser();
       HapticFeedback.mediumImpact();
     } catch (e) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível obter a localização: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível obter a localização: $e')));
     }
   }
 
@@ -225,8 +240,11 @@ class _MapImportPageState extends State<MapImportPage> {
               ),
               tooltip: 'Exportar Projeto (GeoJSON)',
             ),
-          IconButton(icon: const Icon(Icons.file_upload_outlined), onPressed: mapProvider.isLoading ? null : _handleImport, tooltip: 'Importar Novo GeoJSON'),
-          if (mapProvider.polygons.isNotEmpty && !mapProvider.isLoading) IconButton(icon: const Icon(Icons.delete_sweep_outlined), onPressed: _confirmClearMap, tooltip: 'Limpar Mapa'),
+          IconButton(
+            icon: const Icon(Icons.file_upload_outlined),
+            onPressed: mapProvider.isLoading ? null : _handleImport,
+            tooltip: 'Importar Novo GeoJSON',
+          ),
         ],
       ),
       body: Stack(
@@ -234,8 +252,8 @@ class _MapImportPageState extends State<MapImportPage> {
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              center: LatLng(-15.7, -47.8),
-              zoom: 4,
+              initialCenter: const LatLng(-15.7, -47.8),
+              initialZoom: 4,
               onPositionChanged: (position, hasGesture) {
                 if (mapProvider.isFollowingUser && hasGesture) {
                   context.read<MapProvider>().toggleFollowingUser();
@@ -243,24 +261,29 @@ class _MapImportPageState extends State<MapImportPage> {
               },
             ),
             children: [
-              TileLayer(urlTemplate: mapProvider.currentTileUrl, userAgentPackageName: 'com.example.geoforestcoletor'),
+              TileLayer(
+                urlTemplate: mapProvider.currentTileUrl,
+                userAgentPackageName: 'com.example.geoforestcoletor',
+                // A propriedade 'tileProvider' foi removida daqui, desativando o cache.
+              ),
               if (mapProvider.polygons.isNotEmpty) PolygonLayer(polygons: mapProvider.polygons),
               MarkerLayer(
                 markers: mapProvider.samplePoints.map((samplePoint) {
                   final color = _getMarkerColor(samplePoint.status);
                   final textColor = _getMarkerTextColor(samplePoint.status);
                   return Marker(
-                    width: 40.0, height: 40.0,
+                    width: 40.0,
+                    height: 40.0,
                     point: samplePoint.position,
                     child: GestureDetector(
                       onTap: () async {
                         final dbId = samplePoint.data['dbId'] as int?;
                         if (dbId == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erro: ID da parcela não encontrado.')));
+                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erro: ID da parcela não encontrado.')));
                           return;
                         }
                         final parcela = await DatabaseHelper().getParcelaById(dbId);
-                        if (parcela == null || !mounted) return;
+                        if (!mounted || parcela == null) return;
                         final foiAtualizado = await Navigator.push<bool>(
                           context,
                           MaterialPageRoute(builder: (context) => ColetaDadosPage(parcelaParaEditar: parcela)),
@@ -273,8 +296,19 @@ class _MapImportPageState extends State<MapImportPage> {
                         }
                       },
                       child: Container(
-                        decoration: BoxDecoration(color: color, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(2, 2))]),
-                        child: Center(child: Text(samplePoint.id.toString(), style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 14))),
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 4, offset: const Offset(2, 2))
+                          ],
+                        ),
+                        child: Center(
+                          child: Text(
+                            samplePoint.id.toString(),
+                            style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                        ),
                       ),
                     ),
                   );
@@ -284,7 +318,8 @@ class _MapImportPageState extends State<MapImportPage> {
                 MarkerLayer(
                   markers: [
                     Marker(
-                      width: 80.0, height: 80.0,
+                      width: 80.0,
+                      height: 80.0,
                       point: LatLng(currentUserPosition.latitude, currentUserPosition.longitude),
                       child: Transform.rotate(
                         angle: (currentUserPosition.heading * (pi / 180)),
@@ -298,7 +333,12 @@ class _MapImportPageState extends State<MapImportPage> {
           if (mapProvider.isLoading)
             Container(
               color: Colors.black.withOpacity(0.5),
-              child: const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(), SizedBox(height: 16), Text("Processando...", style: TextStyle(color: Colors.white, fontSize: 16))])),
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [CircularProgressIndicator(), SizedBox(height: 16), Text("Processando...", style: TextStyle(color: Colors.white, fontSize: 16))],
+                ),
+              ),
             ),
         ],
       ),
@@ -316,15 +356,25 @@ class _MapImportPageState extends State<MapImportPage> {
           ),
           const SizedBox(height: 16),
           FloatingActionButton(
-            onPressed: () { context.read<MapProvider>().switchMapLayer(); },
-            tooltip: 'Mudar Camada do Mapa', heroTag: 'switchLayerFab',
+            onPressed: () {
+              context.read<MapProvider>().switchMapLayer();
+            },
+            tooltip: 'Mudar Camada do Mapa',
+            heroTag: 'switchLayerFab',
             mini: true,
-            child: Icon(mapProvider.currentLayer == MapLayerType.ruas ? Icons.satellite_outlined : (mapProvider.currentLayer == MapLayerType.satelite ? Icons.terrain : Icons.map_outlined)),
+            child: Icon(
+              mapProvider.currentLayer == MapLayerType.ruas
+                  ? Icons.satellite_outlined
+                  : (mapProvider.currentLayer == MapLayerType.satelite ? Icons.terrain : Icons.map_outlined),
+            ),
           ),
           const SizedBox(height: 16),
           if (mapProvider.polygons.isNotEmpty)
             FloatingActionButton.extended(
-              onPressed: _handleGenerateSamples, label: const Text('Gerar Amostras'), icon: const Icon(Icons.grid_on_sharp), heroTag: 'generateSamplesFab',
+              onPressed: _handleGenerateSamples,
+              label: const Text('Gerar Amostras'),
+              icon: const Icon(Icons.grid_on_sharp),
+              heroTag: 'generateSamplesFab',
             ),
         ],
       ),

@@ -1,16 +1,51 @@
+// lib/services/auth_service.dart (COPIE E COLE ESTE CÓDIGO COMPLETO)
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geoforestcoletor/services/licensing_service.dart';
 
 class AuthService {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
+  final LicensingService _licensingService = LicensingService();
 
   Future<UserCredential> signInWithEmailAndPassword({
     required String email,
     required String password,
-  }) {
-    return _firebaseAuth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+  }) async {
+    // ==========================================================
+    // AJUSTE FEITO AQUI: ATUALIZADO PARA O NOVO E-MAIL DE TESTE
+    // ==========================================================
+    if (email == 'teste@geoforest.com') { // <-- ATUALIZADO
+      print('Usuário super-dev detectado. Pulando verificação de licença.');
+      return _firebaseAuth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    }
+    // ==========================================================
+
+    // --- Início do Fluxo Normal para Clientes ---
+    try {
+      final userCredential = await _firebaseAuth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      if (userCredential.user == null) {
+        throw FirebaseAuthException(code: 'user-not-found', message: 'Usuário não encontrado após o login.');
+      }
+
+      await _licensingService.checkAndRegisterDevice(userCredential.user!);
+      
+      return userCredential;
+
+    } on LicenseException catch (e) {
+      print('Erro de licença: ${e.message}. Deslogando usuário.');
+      await signOut(); 
+      rethrow;
+
+    } on FirebaseAuthException {
+      rethrow;
+    }
   }
 
   Future<UserCredential> createUserWithEmailAndPassword({
@@ -22,17 +57,13 @@ class AuthService {
       email: email,
       password: password,
     );
-
-    // Atualiza o nome do usuário
     await credential.user?.updateDisplayName(displayName);
-
     return credential;
   }
 
   Future<void> sendPasswordResetEmail({required String email}) async {
-  await _firebaseAuth.sendPasswordResetEmail(email: email);
-}
-
+    await _firebaseAuth.sendPasswordResetEmail(email: email);
+  }
 
   Future<void> signOut() async {
     await _firebaseAuth.signOut();

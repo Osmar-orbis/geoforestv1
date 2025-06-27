@@ -2,14 +2,19 @@
 
 enum StatusArvore { 
   normal, 
-  falha, 
-  morta, 
+  falha,
+  bifurcada,
+  multipla,
   quebrada, 
+  morta,
   caida, 
   ataquemacaco, 
   regenaracao, 
-  bifurcada,
-  multipla // <<< RE-ADICIONADO
+  inclinada,
+  fogo,
+  formiga,
+  outro
+   // <<< RE-ADICIONADO
 }
 
 class Arvore {

@@ -1,4 +1,4 @@
-// lib/main.dart
+// lib/main.dart (VERSÃO CORRIGIDA E COMPLETA)
 
 // ignore_for_file: deprecated_member_use, duplicate_ignore
 
@@ -8,14 +8,16 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:provider/provider.dart';
-
 import 'firebase_options.dart';
-import 'package:geoforestcoletor/providers/map_provider.dart';
-import 'package:geoforestcoletor/controller/login_controller.dart';
+
+// Importações do Projeto
 import 'package:geoforestcoletor/pages/menu/home_page.dart';
 import 'package:geoforestcoletor/pages/menu/login_page.dart';
 import 'package:geoforestcoletor/pages/menu/map_import_page.dart';
 import 'package:geoforestcoletor/pages/menu/equipe_page.dart';
+import 'package:geoforestcoletor/providers/map_provider.dart';
+import 'package:geoforestcoletor/providers/team_provider.dart'; // <<< Provider da equipe
+import 'package:geoforestcoletor/controller/login_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,7 +34,6 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-
     runApp(const MyApp());
   } catch (e) {
     runApp(
@@ -46,17 +47,21 @@ Future<void> main() async {
   }
 }
 
-// Widget principal do aplicativo
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
+      // ====================================================================
+      // AJUSTE PRINCIPAL FEITO AQUI
+      // ====================================================================
       providers: [
-        ChangeNotifierProvider(create: (_) => LoginController()), // Controller do login
-        ChangeNotifierProvider(create: (_) => MapProvider()), // MapProvider persistente
+        ChangeNotifierProvider(create: (_) => LoginController()),
+        ChangeNotifierProvider(create: (_) => MapProvider()),
+        ChangeNotifierProvider(create: (_) => TeamProvider()), // <<< LINHA ADICIONADA
       ],
+      // ====================================================================
       child: MaterialApp(
         title: 'Geo Forest Analytics',
         debugShowCheckedModeBanner: false,
@@ -64,14 +69,17 @@ class MyApp extends StatelessWidget {
         darkTheme: _buildThemeData(Brightness.dark),
         initialRoute: '/',
         routes: {
-          // Rota inicial agora verifica login
           '/': (context) {
-            final loginController = Provider.of<LoginController>(context, listen: false);
-            loginController.checkLoginStatus();
             return Consumer<LoginController>(
               builder: (context, controller, child) {
+                if (!controller.isInitialized) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                
                 if (controller.isLoggedIn) {
-                  return const HomePage(title: 'Geo Forest Analytics');
+                  return const EquipePage();
                 } else {
                   return const LoginPage();
                 }
@@ -133,7 +141,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// Tela de erro
 class ErrorScreen extends StatelessWidget {
   final String message;
   final VoidCallback? onRetry;

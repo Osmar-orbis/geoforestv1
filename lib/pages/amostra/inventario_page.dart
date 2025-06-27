@@ -1,4 +1,4 @@
-// lib/pages/amostra/inventario_page.dart
+// lib/pages/amostra/inventario_page.dart (COPIE E COLE ESTE CÓDIGO COMPLETO)
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
@@ -32,10 +32,10 @@ class _InventarioPageState extends State<InventarioPage> {
     setState(() => _isLoading = true);
     if (widget.parcela.dbId != null) {
       final arvoresDoBanco = await DatabaseHelper().getArvoresDaParcela(widget.parcela.dbId!);
-      setState(() => _arvoresColetadas = arvoresDoBanco);
+      if(mounted) setState(() => _arvoresColetadas = arvoresDoBanco);
     }
     _atualizarContadoresLinhaPosicao();
-    setState(() => _isLoading = false);
+    if(mounted) setState(() => _isLoading = false);
   }
 
   void _atualizarContadoresLinhaPosicao() {
@@ -86,7 +86,7 @@ class _InventarioPageState extends State<InventarioPage> {
           break;
         }
 
-        setState(() => _arvoresColetadas.add(result.arvore));
+        if(mounted) setState(() => _arvoresColetadas.add(result.arvore));
         await _salvarEstadoAtual(showSnackbar: false);
         continuarNaMesmaPosicaoFuste = result.continuarNaMesmaPosicao;
         if (continuarNaMesmaPosicaoFuste) primeiroFuste = false;
@@ -96,7 +96,7 @@ class _InventarioPageState extends State<InventarioPage> {
         }
       } while (continuarNaMesmaPosicaoFuste);
     }
-    setState(_atualizarContadoresLinhaPosicao);
+    if(mounted) setState(_atualizarContadoresLinhaPosicao);
   }
 
   Future<void> _abrirFormularioParaEditar(Arvore arvore) async {
@@ -108,7 +108,7 @@ class _InventarioPageState extends State<InventarioPage> {
     if (result != null) {
       final index = _arvoresColetadas.indexWhere((a) => a.id == arvore.id);
       if (index != -1) {
-        _arvoresColetadas[index] = result.arvore;
+        if(mounted) setState(() => _arvoresColetadas[index] = result.arvore);
         await _salvarEstadoAtual();
         await _carregarDadosIniciais();
       }
@@ -117,7 +117,7 @@ class _InventarioPageState extends State<InventarioPage> {
 
   Future<void> _salvarEstadoAtual({bool showSnackbar = true, bool concluir = false}) async {
     if (_isSaving) return;
-    setState(() => _isSaving = true);
+    if(mounted) setState(() => _isSaving = true);
     try {
       if (concluir) {
         widget.parcela.status = StatusParcela.concluida;
@@ -141,12 +141,41 @@ class _InventarioPageState extends State<InventarioPage> {
     }
   }
 
+  /// Seleciona as árvores dominantes com base no maior CAP,
+  /// considerando apenas aquelas com o status 'Normal'.
+  void _identificarArvoresDominantes() {
+    for (var arvore in _arvoresColetadas) {
+      arvore.dominante = false;
+    }
+    final int numeroDeDominantes = (widget.parcela.areaMetrosQuadrados / 100).floor();
+    
+    // AQUI ESTÁ A REGRA: Apenas árvores 'Normais' são elegíveis para serem dominantes.
+    final arvoresCandidatas = _arvoresColetadas
+        .where((a) => a.status == StatusArvore.normal)
+        .toList();
+
+    if (arvoresCandidatas.length <= numeroDeDominantes) {
+      // Se houver menos candidatas que o necessário, todas se tornam dominantes.
+      for (var arvore in arvoresCandidatas) {
+        arvore.dominante = true;
+      }
+    } else {
+      // Caso contrário, ordena por CAP e pega as maiores.
+      arvoresCandidatas.sort((a, b) => b.cap.compareTo(a.cap));
+      for (int i = 0; i < numeroDeDominantes; i++) {
+        arvoresCandidatas[i].dominante = true;
+      }
+    }
+  }
+
+  /// Orquestra o processo de conclusão da coleta.
   Future<void> _concluirColeta() async {
+    // 1. Pede a confirmação do usuário.
     final confirm = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Concluir Coleta'),
-            content: const Text('Tem certeza que deseja marcar esta parcela como concluída?'),
+            content: const Text('Tem certeza que deseja marcar esta parcela como concluída? As árvores dominantes serão selecionadas automaticamente.'),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
               ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Concluir')),
@@ -154,36 +183,16 @@ class _InventarioPageState extends State<InventarioPage> {
           ),
         ) ?? false;
 
-    if (confirm) {
-      await _salvarEstadoAtual(concluir: true, showSnackbar: false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Parcela concluída com sucesso!'), backgroundColor: Colors.blue),
-        );
-        // =========================================================================
-        // ======================== CORREÇÃO IMPORTANTE AQUI =======================
-        // Garante que estamos retornando 'true' para a ColetaDadosPage
-        // =========================================================================
-        Navigator.of(context).pop(true);
-      }
-    }
-  }
+    // 2. Se o usuário não confirmar, o método simplesmente termina.
+    if (!confirm) return;
 
-  void _identificarArvoresDominantes() {
-    for (var arvore in _arvoresColetadas) {
-      arvore.dominante = false;
-    }
-    final int numeroDeDominantes = (widget.parcela.areaMetrosQuadrados / 100).floor();
-    final arvoresCandidatas = _arvoresColetadas.where((a) => a.status != StatusArvore.falha && a.status != StatusArvore.morta).toList();
-    if (arvoresCandidatas.length <= numeroDeDominantes) {
-      for (var arvore in arvoresCandidatas) {
-        arvore.dominante = true;
-      }
-    } else {
-      arvoresCandidatas.sort((a, b) => b.cap.compareTo(a.cap));
-      for (int i = 0; i < numeroDeDominantes; i++) {
-        arvoresCandidatas[i].dominante = true;
-      }
+    // 3. Se o usuário confirmou, salva o estado final e fecha a tela.
+    await _salvarEstadoAtual(concluir: true, showSnackbar: false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Parcela concluída com sucesso!'), backgroundColor: Colors.blue),
+      );
+      Navigator.of(context).pop(true);
     }
   }
 
@@ -208,7 +217,9 @@ class _InventarioPageState extends State<InventarioPage> {
           ],
         ],
       ),
-      body: _isLoading ? const Center(child: CircularProgressIndicator()) : Column(
+      body: _isLoading 
+          ? const Center(child: CircularProgressIndicator()) 
+          : Column(
               children: [
                 Padding(
                   padding: const EdgeInsets.all(8.0),
@@ -226,10 +237,10 @@ class _InventarioPageState extends State<InventarioPage> {
                   child: SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () => setState(() {
+                      onPressed: () {
                         if (!_mostrandoApenasDominantes) _identificarArvoresDominantes();
-                        _mostrandoApenasDominantes = !_mostrandoApenasDominantes;
-                      }),
+                        setState(() => _mostrandoApenasDominantes = !_mostrandoApenasDominantes);
+                      },
                       icon: Icon(_mostrandoApenasDominantes ? Icons.filter_list_off : Icons.filter_list),
                       label: Text(_mostrandoApenasDominantes ? 'Mostrar Todas' : 'Encontrar Dominantes'),
                     ),
@@ -237,7 +248,8 @@ class _InventarioPageState extends State<InventarioPage> {
                 ),
                 const Divider(height: 16),
                 Expanded(
-                  child: _arvoresColetadas.isEmpty ? const Center(child: Text('Clique no botão "+" para adicionar a primeira árvore.', style: TextStyle(color: Colors.grey, fontSize: 16)))
+                  child: _arvoresColetadas.isEmpty 
+                      ? const Center(child: Text('Clique no botão "+" para adicionar a primeira árvore.', style: TextStyle(color: Colors.grey, fontSize: 16)))
                       : ListView.builder(
                           itemCount: listaExibida.length,
                           itemBuilder: (context, index) {

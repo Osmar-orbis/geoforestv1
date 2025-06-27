@@ -41,49 +41,47 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyDsg5PMINPmDNg4GYWv9ZS6tckckZBM8so',
-    appId: '1:42806286143:web:b566c9d8f7a7da89afe58a',
-    messagingSenderId: '42806286143',
-    projectId: 'coletorgeoforest',
-    authDomain: 'coletorgeoforest.firebaseapp.com',
-    storageBucket: 'coletorgeoforest.firebasestorage.app',
-    measurementId: 'G-2SGP5N7HWC',
+    apiKey: 'AIzaSyAKcql3CBdM_mTH30V7hyG4bc_Vw4u4QgI',
+    appId: '1:1072413984703:web:17877dc6c307cefd28030a',
+    messagingSenderId: '1072413984703',
+    projectId: 'geoforestfinal',
+    authDomain: 'geoforestfinal.firebaseapp.com',
+    storageBucket: 'geoforestfinal.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAu6KQNjeu1ZDD3-yi4yjXr1T9BvqC-MDM',
-    appId: '1:42806286143:android:eef2f39e51941b42afe58a',
-    messagingSenderId: '42806286143',
-    projectId: 'coletorgeoforest',
-    storageBucket: 'coletorgeoforest.firebasestorage.app',
+    apiKey: 'AIzaSyDViWoq1UVYf9-ATIO_C0SI__bfvqsQB24',
+    appId: '1:1072413984703:android:f796dce25c5cff4b28030a',
+    messagingSenderId: '1072413984703',
+    projectId: 'geoforestfinal',
+    storageBucket: 'geoforestfinal.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAiQgIGS9TLIWWFHMfImE0hxkdjkhE4GmE',
-    appId: '1:42806286143:ios:672398aa304927e3afe58a',
-    messagingSenderId: '42806286143',
-    projectId: 'coletorgeoforest',
-    storageBucket: 'coletorgeoforest.firebasestorage.app',
-    iosBundleId: 'com.example.geoforestcoletor',
+    apiKey: 'AIzaSyBtnEQPoXD6JUFKOvHZCSdyz_grOFDXJfY',
+    appId: '1:1072413984703:ios:cbbfb5b769ecf50f28030a',
+    messagingSenderId: '1072413984703',
+    projectId: 'geoforestfinal',
+    storageBucket: 'geoforestfinal.firebasestorage.app',
+    iosBundleId: 'com.example.geoforestcoletorv1',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyAiQgIGS9TLIWWFHMfImE0hxkdjkhE4GmE',
-    appId: '1:42806286143:ios:672398aa304927e3afe58a',
-    messagingSenderId: '42806286143',
-    projectId: 'coletorgeoforest',
-    storageBucket: 'coletorgeoforest.firebasestorage.app',
-    iosBundleId: 'com.example.geoforestcoletor',
+    apiKey: 'AIzaSyBtnEQPoXD6JUFKOvHZCSdyz_grOFDXJfY',
+    appId: '1:1072413984703:ios:cbbfb5b769ecf50f28030a',
+    messagingSenderId: '1072413984703',
+    projectId: 'geoforestfinal',
+    storageBucket: 'geoforestfinal.firebasestorage.app',
+    iosBundleId: 'com.example.geoforestcoletorv1',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyDsg5PMINPmDNg4GYWv9ZS6tckckZBM8so',
-    appId: '1:42806286143:web:bb6de0b6df9248e8afe58a',
-    messagingSenderId: '42806286143',
-    projectId: 'coletorgeoforest',
-    authDomain: 'coletorgeoforest.firebaseapp.com',
-    storageBucket: 'coletorgeoforest.firebasestorage.app',
-    measurementId: 'G-SM14JCBE8W',
+    apiKey: 'AIzaSyAKcql3CBdM_mTH30V7hyG4bc_Vw4u4QgI',
+    appId: '1:1072413984703:web:9bcf56da7edd0c6428030a',
+    messagingSenderId: '1072413984703',
+    projectId: 'geoforestfinal',
+    authDomain: 'geoforestfinal.firebaseapp.com',
+    storageBucket: 'geoforestfinal.firebasestorage.app',
   );
-}
 
+}

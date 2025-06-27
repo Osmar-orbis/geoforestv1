@@ -1,11 +1,12 @@
-import 'package:flutter/foundation.dart'; // Adicionado para kDebugMode
+// lib/pages/menu/login_page.dart (COPIE E COLE ESTE CÓDIGO COMPLETO)
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Adicionado para FirebaseAuth
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geoforestcoletor/services/auth_service.dart';
 import 'package:geoforestcoletor/pages/menu/register_page.dart';
 import 'package:geoforestcoletor/pages/menu/forgot_password_page.dart';
 
-// Sugestão: Centralizar cores para facilitar a manutenção
 const Color primaryColor = Color(0xFF1D4433);
 const Color secondaryTextColor = Color(0xFF617359);
 const Color backgroundColor = Color(0xFFF3F3F4);
@@ -34,62 +35,49 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _login() async {
-    // Valida o formulário antes de continuar
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
 
     try {
+      // ==========================================================
+      // CORREÇÃO APLICADA AQUI
+      // ==========================================================
       await _authService.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
+        email: _emailController.text.trim(), // <-- CORRETO
+        password: _passwordController.text,  // <-- CORRETO
       );
+      // ==========================================================
 
-      // Proteção: Verifica se o widget ainda está montado antes de usar o context
       if (!mounted) return;
-
-      // Navega para a tela principal após o sucesso
-      // Usar pushReplacementNamed impede o usuário de voltar para a tela de login
       Navigator.pushReplacementNamed(context, '/equipe');
 
     } on FirebaseAuthException catch (e) {
-      // Tratamento de erro aprimorado para mensagens amigáveis
       String errorMessage = 'Ocorreu um erro. Tente novamente.';
-      if (e.code == 'user-not-found' || e.code == 'invalid-email') {
-        errorMessage = 'Email não encontrado ou inválido.';
-      } else if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+      if (e.code == 'user-not-found' || e.code == 'invalid-email' || e.code == 'invalid-credential') {
+        errorMessage = 'Email ou senha inválidos.';
+      } else if (e.code == 'wrong-password') {
         errorMessage = 'Senha incorreta. Por favor, tente novamente.';
       }
-
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(errorMessage),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
       );
     } catch (e) {
-      // Captura para outros erros genéricos
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao fazer login: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Erro ao fazer login: ${e.toString()}'), backgroundColor: Colors.red),
       );
     } finally {
-      // Garante que o estado de loading seja desativado
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
   }
 
-  // Função para o login de teste (se mantida)
   Future<void> _loginTeste() async {
     setState(() => _isLoading = true);
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      await _authService.signInWithEmailAndPassword(
         email: 'teste@geoforest.com',
         password: '123456',
       );
@@ -109,6 +97,7 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    // O resto do seu build method está perfeito e não precisa de alterações.
     return Scaffold(
       backgroundColor: backgroundColor,
       body: SafeArea(
@@ -117,8 +106,6 @@ class _LoginPageState extends State<LoginPage> {
           child: Column(
             children: [
               const SizedBox(height: 40),
-
-              // Logo
               Container(
                 width: 120,
                 height: 120,
@@ -141,10 +128,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 32),
-
-              // Título
               const Text(
                 'Bem-vindo de volta!',
                 style: TextStyle(
@@ -153,9 +137,7 @@ class _LoginPageState extends State<LoginPage> {
                   color: primaryColor,
                 ),
               ),
-
               const SizedBox(height: 8),
-
               const Text(
                 'Faça login para continuar',
                 style: TextStyle(
@@ -163,15 +145,11 @@ class _LoginPageState extends State<LoginPage> {
                   color: secondaryTextColor,
                 ),
               ),
-
               const SizedBox(height: 40),
-
-              // Formulário
               Form(
                 key: _formKey,
                 child: Column(
                   children: [
-                    // Campo Email
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -198,7 +176,6 @@ class _LoginPageState extends State<LoginPage> {
                           if (value == null || value.isEmpty) {
                             return 'Por favor, insira seu email';
                           }
-                          // Regex corrigida e mais comum
                           if (!RegExp(r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~-]+@[a-zA-Z0-9]+\.[a-zA-Z]+")
                               .hasMatch(value)) {
                             return 'Por favor, insira um email válido';
@@ -207,10 +184,7 @@ class _LoginPageState extends State<LoginPage> {
                         },
                       ),
                     ),
-
                     const SizedBox(height: 16),
-
-                    // Campo Senha
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -255,10 +229,7 @@ class _LoginPageState extends State<LoginPage> {
                         },
                       ),
                     ),
-
                     const SizedBox(height: 16),
-                    
-                    // Botão de login para desenvolvimento
                     if (kDebugMode)
                       TextButton(
                         onPressed: _isLoading ? null : _loginTeste,
@@ -267,9 +238,6 @@ class _LoginPageState extends State<LoginPage> {
                           style: TextStyle(color: Colors.grey),
                         ),
                       ),
-
-
-                    // Link Esqueci a senha
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
@@ -290,10 +258,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 24),
-
-                    // Botão Login
                     SizedBox(
                       width: double.infinity,
                       height: 56,
@@ -325,10 +290,7 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                       ),
                     ),
-
                     const SizedBox(height: 32),
-
-                    // Divisor
                     Row(
                       children: [
                         Expanded(
@@ -355,10 +317,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 32),
-
-                    // Botão Criar Conta
                     SizedBox(
                       width: double.infinity,
                       height: 56,

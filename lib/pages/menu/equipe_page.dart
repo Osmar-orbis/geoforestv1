@@ -1,7 +1,8 @@
-// lib/pages/equipe_page.dart
+// lib/pages/menu/equipe_page.dart
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
+import 'package:geoforestcoletor/providers/team_provider.dart';
 
 class EquipePage extends StatefulWidget {
   const EquipePage({super.key});
@@ -19,21 +20,24 @@ class _EquipePageState extends State<EquipePage> {
   @override
   void initState() {
     super.initState();
-    _carregarNomesSalvos();
-  }
-
-  Future<void> _carregarNomesSalvos() async {
-    final prefs = await SharedPreferences.getInstance();
-    _liderController.text = prefs.getString('nome_lider') ?? '';
-    _ajudantesController.text = prefs.getString('nomes_ajudantes') ?? '';
+    // Carrega os nomes usando o Provider assim que a tela é construída
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final teamProvider = Provider.of<TeamProvider>(context, listen: false);
+      _liderController.text = teamProvider.lider ?? '';
+      _ajudantesController.text = teamProvider.ajudantes ?? '';
+    });
   }
 
   void _continuar() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('nome_lider', _liderController.text);
-      await prefs.setString('nomes_ajudantes', _ajudantesController.text);
+
+      // <<< CORREÇÃO: Usa o provider para salvar os dados
+      final teamProvider = Provider.of<TeamProvider>(context, listen: false);
+      await teamProvider.setTeam(
+        _liderController.text,
+        _ajudantesController.text,
+      );
 
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/home');
@@ -41,6 +45,7 @@ class _EquipePageState extends State<EquipePage> {
     }
   }
 
+  // O resto do build da tela permanece o mesmo...
   @override
   Widget build(BuildContext context) {
     return Scaffold(

@@ -1,97 +1,108 @@
-// lib/pages/menu/home_page.dart
+// lib/pages/menu/home_page.dart (VERSÃO FINAL SEM SINCRONIZAÇÃO)
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
+import 'package:geoforestcoletor/models/parcela_model.dart';
 import 'package:geoforestcoletor/pages/amostra/coleta_dados_page.dart';
-import 'package:geoforestcoletor/pages/menu/configuracoes_page.dart';
 import 'package:geoforestcoletor/pages/amostra/lista_coletas_page.dart';
+import 'package:geoforestcoletor/pages/menu/configuracoes_page.dart';
 import 'package:geoforestcoletor/pages/menu/sobre_page.dart';
+import 'package:geoforestcoletor/providers/map_provider.dart';
+import 'package:geoforestcoletor/providers/team_provider.dart';
+import 'package:geoforestcoletor/services/export_service.dart';
+// import 'package:geoforestcoletor/services/sync_service.dart'; // REMOVIDO
 import 'package:geoforestcoletor/widgets/menu_card.dart';
-import 'package:geoforestcoletor/models/parcela_model.dart'; // <<< 1. IMPORT NECESSÁRIO
+import 'package:provider/provider.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key, required this.title});
   final String title;
 
-  void _mostrarDialogoExportacao(BuildContext context) {
-    final dbHelper = DatabaseHelper();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Exportar Dados'),
-        content: const Text('Qual tipo de dado você deseja exportar em CSV?'),
-        actions: [
-          TextButton(
-            child: const Text('Coletas de Parcela'),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              dbHelper.exportarDados(context);
-            },
-          ),
-          TextButton(
-            child: const Text('Cubagens Rigorosas'),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              dbHelper.exportarCubagens(context);
-            },
-          ),
-        ],
-      ),
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  // REMOVIDO: final SyncService _syncService = SyncService();
+  // REMOVIDO: bool _isSyncing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // REMOVIDO: Lógica de sincronização automática
+    // Future.delayed(const Duration(seconds: 1), () {
+    //   print("HomePage: Tentando sincronização automática...");
+    //   _syncService.syncData();
+    // });
+  }
+
+  // REMOVIDO: Método _handleSync()
+  // Future<void> _handleSync() async {
+  //   if (_isSyncing) return;
+  //   setState(() => _isSyncing = true);
+  //   final scaffoldMessenger = ScaffoldMessenger.of(context);
+  //   scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Iniciando sincronização...')));
+
+  //   try {
+  //     final count = await _syncService.syncData();
+  //     if (!mounted) return;
+  //     if (count > 0) {
+  //       scaffoldMessenger.showSnackBar(SnackBar(content: Text('$count registros foram sincronizados!'), backgroundColor: Colors.green));
+  //     } else {
+  //       scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Nenhum dado novo para sincronizar.')));
+  //     }
+  //   } catch (e) {
+  //     if (!mounted) return;
+  //     scaffoldMessenger.showSnackBar(SnackBar(content: Text('Erro na sincronização: $e'), backgroundColor: Colors.red));
+  //   } finally {
+  //     if (mounted) setState(() => _isSyncing = false);
+  //   }
+  // }
+
+  void _iniciarNovaColeta(BuildContext context) {
+    final teamProvider = Provider.of<TeamProvider>(context, listen: false);
+    
+    final novaParcelaAvulsa = Parcela(
+      nomeFazenda: '',
+      nomeTalhao: '',
+      idParcela: '',
+      areaMetrosQuadrados: 0,
+      status: StatusParcela.pendente,
+      dataColeta: DateTime.now(),
+      nomeLider: teamProvider.lider,
+      nomesAjudantes: teamProvider.ajudantes,
+      // REMOVIDO: isSynced: false,
+      // REMOVIDO: clientId: _currentClientId, // Se você adicionou o clientId, ele ainda pode ser útil para organização local ou exportação.
     );
+    Navigator.push(context, MaterialPageRoute(builder: (context) => ColetaDadosPage(parcelaParaEditar: novaParcelaAvulsa)));
+  }
+
+  void _mostrarDialogoExportacao(BuildContext context) {
+    final dbHelper = DatabaseHelper.instance; 
+    final exportService = ExportService();
+    final mapProvider = context.read<MapProvider>();
+    showModalBottomSheet(context: context, builder: (ctx) => Container(padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 10), child: Wrap(spacing: 10, runSpacing: 10, children: [Padding(padding: const EdgeInsets.fromLTRB(6, 0, 6, 10), child: Text('Escolha o que deseja exportar', style: Theme.of(context).textTheme.titleLarge)), ListTile(leading: const Icon(Icons.table_rows_outlined, color: Colors.green), title: const Text('Coletas de Parcela (CSV)'), subtitle: const Text('Exporta os dados de parcelas e árvores.'), onTap: () {Navigator.of(ctx).pop(); dbHelper.exportarDados(context);}), ListTile(leading: const Icon(Icons.table_chart_outlined, color: Colors.brown), title: const Text('Cubagens Rigorosas (CSV)'), subtitle: const Text('Exporta os dados de cubagens e seções.'), onTap: () {Navigator.of(ctx).pop(); dbHelper.exportarCubagens(context);}), ListTile(leading: const Icon(Icons.map_outlined, color: Colors.purple), title: const Text('Projeto do Mapa (GeoJSON)'), subtitle: const Text('Exporta os polígonos e pontos do mapa atual.'), onTap: () {Navigator.of(ctx).pop(); if (mapProvider.polygons.isEmpty && mapProvider.samplePoints.isEmpty) {ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não há projeto carregado no mapa para exportar.'))); return;} exportService.exportProjectAsGeoJson(context: context, areaPolygons: mapProvider.polygons, samplePoints: mapProvider.samplePoints, farmName: mapProvider.farmName, blockName: mapProvider.blockName);})])));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(title: Text(widget.title)),
       body: Padding(
         padding: const EdgeInsets.all(12.0),
         child: GridView.count(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12.0,
-          mainAxisSpacing: 12.0,
-          childAspectRatio: 1.0,
+          crossAxisCount: 2, crossAxisSpacing: 12.0, mainAxisSpacing: 12.0, childAspectRatio: 1.0,
           children: [
-            MenuCard(
-              icon: Icons.explore_outlined,
-              label: 'Navegação', 
-              onTap: () => Navigator.pushNamed(context, '/map_import'),
-            ),
-            
-            // =========================================================================
-            // ======================== CORREÇÃO APLICADA AQUI =========================
-            // =========================================================================
-            MenuCard(
-              icon: Icons.add_location_alt_outlined,
-              label: 'Nova Coleta',
-              onTap: () {
-                // 1. Cria um objeto Parcela "vazio" com os valores mínimos necessários.
-                final novaParcelaAvulsa = Parcela(
-                  nomeFazenda: '', 
-                  nomeTalhao: '', 
-                  idParcela: '', 
-                  areaMetrosQuadrados: 0, 
-                  status: StatusParcela.pendente // O status 'pendente' indica uma nova entrada
-                );
-
-                // 2. Navega para a ColetaDadosPage, passando a parcela "vazia" para ser preenchida.
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    // Remove o 'const'
-                    builder: (context) => ColetaDadosPage(parcelaParaEditar: novaParcelaAvulsa),
-                  ),
-                );
-              },
-            ),
-            // =========================================================================
-            
+            MenuCard(icon: Icons.explore_outlined, label: 'Navegação', onTap: () => Navigator.pushNamed(context, '/map_import')),
+            MenuCard(icon: Icons.add_location_alt_outlined, label: 'Nova Coleta', onTap: () => _iniciarNovaColeta(context)),
             MenuCard(icon: Icons.checklist_rtl_outlined, label: 'Painel de Coletas', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ListaColetasPage(title: 'Painel de Coletas')))),
-            MenuCard(
-              icon: Icons.upload_file_outlined,
-              label: 'Exportar Dados',
-              onTap: () => _mostrarDialogoExportacao(context),
-            ),
+            // REMOVIDO: MenuCard de Sincronizar Dados
+            // MenuCard(
+            //   icon: _isSyncing ? Icons.hourglass_top_outlined : Icons.sync_outlined,
+            //   label: 'Sincronizar Dados',
+            //   onTap: _isSyncing ? () {} : () => _handleSync(),
+            // ),
+            MenuCard(icon: Icons.upload_file_outlined, label: 'Exportar Dados', onTap: () => _mostrarDialogoExportacao(context)),
             MenuCard(icon: Icons.settings_outlined, label: 'Configurações', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ConfiguracoesPage()))),
             MenuCard(icon: Icons.info_outline, label: 'Sobre', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SobrePage()))),
           ],

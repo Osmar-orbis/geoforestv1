@@ -1,4 +1,4 @@
-// lib/pages/amostra/coleta_dados_page.dart
+// lib/pages/amostra/coleta_dados_page.dart (CÓDIGO CORRIGIDO E COMPLETO)
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -10,7 +10,11 @@ import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
 enum FormaParcela { retangular, circular }
 
 class ColetaDadosPage extends StatefulWidget {
+  // CORRIGIDO: A propriedade do Widget volta a ser 'final', como deve ser.
+  // A classe Widget é imutável.
   final Parcela parcelaParaEditar;
+
+  // CORRIGIDO: Adicionado 'const' ao construtor.
   const ColetaDadosPage({super.key, required this.parcelaParaEditar});
 
   @override
@@ -19,6 +23,11 @@ class ColetaDadosPage extends StatefulWidget {
 
 class _ColetaDadosPageState extends State<ColetaDadosPage> {
   final _formKey = GlobalKey<FormState>();
+  final dbHelper = DatabaseHelper();
+
+  // NOVO ESTADO: Esta é a variável que guardará a parcela atual e que pode ser modificada.
+  // Ela vive dentro da classe State, que é o lugar correto para estados mutáveis.
+  late Parcela _parcelaAtual;
 
   final _nomeFazendaController = TextEditingController();
   final _idFazendaController = TextEditingController();
@@ -36,18 +45,40 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
   bool _salvando = false;
   FormaParcela _formaDaParcela = FormaParcela.retangular;
   double _areaCalculada = 0.0;
+  bool _temArvoresColetadas = false;
 
   @override
   void initState() {
     super.initState();
-    _preencherDadosIniciais();
+    // Inicializamos nosso estado mutável com o valor inicial passado pelo widget.
+    _parcelaAtual = widget.parcelaParaEditar;
+
+    _carregarDadosDaParcela();
     _larguraController.addListener(_calcularArea);
     _comprimentoController.addListener(_calcularArea);
     _raioController.addListener(_calcularArea);
   }
-  
+
+  Future<void> _carregarDadosDaParcela() async {
+    // Usamos a variável de estado `_parcelaAtual` para a lógica.
+    if (_parcelaAtual.dbId != null) {
+      final parcelaDoBanco = await dbHelper.getParcelaById(_parcelaAtual.dbId!);
+      final arvores = await dbHelper.getArvoresDaParcela(_parcelaAtual.dbId!);
+
+      if (parcelaDoBanco != null && mounted) {
+        setState(() {
+          // CORRIGIDO: Atualizamos a variável de estado, não a do widget.
+          _parcelaAtual = parcelaDoBanco;
+          _temArvoresColetadas = arvores.isNotEmpty;
+        });
+      }
+    }
+    _preencherDadosIniciais();
+  }
+
   void _preencherDadosIniciais() {
-    final p = widget.parcelaParaEditar;
+    // Usamos a variável de estado `_parcelaAtual` para preencher os campos.
+    final p = _parcelaAtual;
     _nomeFazendaController.text = p.nomeFazenda;
     _idFazendaController.text = p.idFazenda ?? '';
     _talhaoParcelaController.text = p.nomeTalhao;
@@ -60,12 +91,15 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
     if (p.comprimento != null) _comprimentoController.text = p.comprimento.toString().replaceAll('.', ',');
     if (p.raio != null) {
       _raioController.text = p.raio.toString().replaceAll('.', ',');
-      setState(() => _formaDaParcela = FormaParcela.circular);
+      _formaDaParcela = FormaParcela.circular;
+    } else {
+      _formaDaParcela = FormaParcela.retangular;
     }
-    
+
     if (p.latitude != null && p.longitude != null) {
       _posicaoAtual = Position(latitude: p.latitude!, longitude: p.longitude!, timestamp: DateTime.now(), accuracy: 0.0, altitude: 0.0, altitudeAccuracy: 0.0, heading: 0.0, headingAccuracy: 0.0, speed: 0.0, speedAccuracy: 0.0);
     }
+    if (mounted) setState(() {});
   }
 
   @override
@@ -96,7 +130,8 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
   }
 
   Parcela _construirObjetoParcela() {
-    return widget.parcelaParaEditar.copyWith(
+    // Usamos `_parcelaAtual` como base para construir o novo objeto.
+    return _parcelaAtual.copyWith(
       nomeFazenda: _nomeFazendaController.text.trim(),
       idFazenda: _idFazendaController.text.trim().isNotEmpty ? _idFazendaController.text.trim() : null,
       nomeTalhao: _talhaoParcelaController.text.trim(),
@@ -106,10 +141,10 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
       observacao: _observacaoController.text.trim().isNotEmpty ? _observacaoController.text.trim() : null,
       latitude: _posicaoAtual?.latitude,
       longitude: _posicaoAtual?.longitude,
-      dataColeta: DateTime.now(),
-      largura: double.tryParse(_larguraController.text.replaceAll(',', '.')),
-      comprimento: double.tryParse(_comprimentoController.text.replaceAll(',', '.')),
-      raio: double.tryParse(_raioController.text.replaceAll(',', '.')),
+      dataColeta: _parcelaAtual.dataColeta ?? DateTime.now(),
+      largura: _formaDaParcela == FormaParcela.retangular ? double.tryParse(_larguraController.text.replaceAll(',', '.')) : null,
+      comprimento: _formaDaParcela == FormaParcela.retangular ? double.tryParse(_comprimentoController.text.replaceAll(',', '.')) : null,
+      raio: _formaDaParcela == FormaParcela.circular ? double.tryParse(_raioController.text.replaceAll(',', '.')) : null,
     );
   }
 
@@ -120,25 +155,22 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
       return;
     }
     setState(() => _salvando = true);
-    
+
     try {
-      final dbHelper = DatabaseHelper();
       final parcelaAtualizada = _construirObjetoParcela().copyWith(status: StatusParcela.emAndamento);
       final parcelaSalva = await dbHelper.saveFullColeta(parcelaAtualizada, []);
-      
+
       if (mounted) {
-        final inventarioConcluido = await Navigator.push<bool>(
+        await Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => InventarioPage(parcela: parcelaSalva)),
         );
-        if (inventarioConcluido == true) {
-          Navigator.of(context).pop(true);
-        }
+        await _carregarDadosDaParcela();
       }
     } catch (e) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
     } finally {
-      if(mounted) setState(() => _salvando = false);
+      if (mounted) setState(() => _salvando = false);
     }
   }
 
@@ -158,9 +190,8 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
 
     if (confirmar != true) return;
     setState(() => _salvando = true);
-    
+
     try {
-      final dbHelper = DatabaseHelper();
       final parcelaFinalizada = _construirObjetoParcela().copyWith(status: StatusParcela.concluida);
       await dbHelper.saveFullColeta(parcelaFinalizada, []);
 
@@ -169,9 +200,9 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
         Navigator.of(context).pop(true);
       }
     } catch (e) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao finalizar: $e'), backgroundColor: Colors.red));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao finalizar: $e'), backgroundColor: Colors.red));
     } finally {
-      if(mounted) setState(() => _salvando = false);
+      if (mounted) setState(() => _salvando = false);
     }
   }
 
@@ -179,32 +210,29 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _salvando = true);
     try {
-      final dbHelper = DatabaseHelper();
       final parcelaEditada = _construirObjetoParcela();
       await dbHelper.updateParcela(parcelaEditada);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Alterações salvas com sucesso!'), backgroundColor: Colors.green));
+        await _carregarDadosDaParcela();
       }
     } catch (e) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
     } finally {
-      if(mounted) setState(() => _salvando = false);
+      if (mounted) setState(() => _salvando = false);
     }
   }
 
   Future<void> _navegarParaInventario() async {
-    await _salvarAlteracoes();
     if (!mounted) return;
-
-    final foiAtualizado = await Navigator.push<bool>(
+    await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => InventarioPage(parcela: widget.parcelaParaEditar),
+        // Passamos a versão mais atual da parcela para a próxima tela.
+        builder: (context) => InventarioPage(parcela: _parcelaAtual),
       ),
     );
-    if (foiAtualizado == true && mounted) {
-      Navigator.of(context).pop(true);
-    }
+    await _carregarDadosDaParcela();
   }
 
   Future<void> _obterLocalizacaoAtual() async {
@@ -218,23 +246,23 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
         if (permission == LocationPermission.denied) throw 'Permissão negada.';
       }
       if (permission == LocationPermission.deniedForever) throw 'Permissão negada permanentemente.';
-
       final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high, timeLimit: const Duration(seconds: 20));
       setState(() => _posicaoAtual = position);
     } catch (e) {
       setState(() => _erroLocalizacao = e.toString());
     } finally {
-      if(mounted) setState(() => _buscandoLocalizacao = false);
+      if (mounted) setState(() => _buscandoLocalizacao = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isNovaColeta = widget.parcelaParaEditar.status == StatusParcela.pendente;
+    // A lógica de decisão usa a nossa variável de estado `_parcelaAtual`.
+    final bool isModoNovo = _parcelaAtual.status == StatusParcela.pendente && !_temArvoresColetadas;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isNovaColeta ? 'Nova Coleta de Parcela' : 'Editar Dados da Parcela'),
+        title: Text(isModoNovo ? 'Nova Coleta de Parcela' : 'Editar Dados da Parcela'),
         backgroundColor: const Color(0xFF617359),
         foregroundColor: Colors.white,
       ),
@@ -264,7 +292,7 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
               const SizedBox(height: 16),
               TextFormField(controller: _observacaoController, decoration: const InputDecoration(labelText: 'Observações', border: OutlineInputBorder(), prefixIcon: Icon(Icons.comment), helperText: 'Opcional'), maxLines: 3),
               const SizedBox(height: 24),
-              _buildActionButtons(isNovaColeta),
+              _buildActionButtons(isModoNovo),
             ],
           ),
         ),

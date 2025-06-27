@@ -1,5 +1,3 @@
-// lib/data/datasources/local/database_helper.dart
-
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
@@ -32,8 +30,12 @@ final Map<int, String> proj4Definitions = {
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._privateConstructor();
   static Database? _database;
+
+  // Adição para permitir o acesso via DatabaseHelper.instance
+  static DatabaseHelper get instance => _instance;
+
   DatabaseHelper._privateConstructor();
-  factory DatabaseHelper() => _instance;
+  factory DatabaseHelper() => _instance; // Mantém o factory constructor para compatibilidade
 
   Future<Database> get database async => _database ??= await _initDatabase();
 
@@ -44,7 +46,8 @@ class DatabaseHelper {
     });
     return await openDatabase(
       join(await getDatabasesPath(), 'geoforestcoletor.db'),
-      version: 9, // <<< VERSÃO INCREMENTADA
+      // 1. VERSÃO DO BANCO INCREMENTADA PARA 13
+      version: 13,
       onConfigure: _onConfigure,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -70,25 +73,16 @@ class DatabaseHelper {
         dataColeta TEXT NOT NULL,
         status TEXT NOT NULL,
         exportada INTEGER DEFAULT 0 NOT NULL,
-        idFazenda TEXT, 
+        idFazenda TEXT,
         largura REAL,
         comprimento REAL,
-        raio REAL
+        raio REAL,
+        isSynced INTEGER DEFAULT 0 NOT NULL -- <<< 2. COLUNA ADICIONADA PARA NOVAS INSTALAÇÕES
       )
     ''');
     await db.execute('''
       CREATE TABLE arvores (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        parcelaId INTEGER NOT NULL,
-        cap REAL NOT NULL,
-        altura REAL,
-        linha INTEGER NOT NULL,
-        posicaoNaLinha INTEGER NOT NULL,
-        fimDeLinha INTEGER NOT NULL,
-        dominante INTEGER NOT NULL,
-        status TEXT NOT NULL,
-        status2 TEXT,
-        FOREIGN KEY (parcelaId) REFERENCES parcelas (id) ON DELETE CASCADE
+        id INTEGER PRIMARY KEY AUTOINCREMENT, parcelaId INTEGER NOT NULL, cap REAL NOT NULL, altura REAL, linha INTEGER NOT NULL, posicaoNaLinha INTEGER NOT NULL, fimDeLinha INTEGER NOT NULL, dominante INTEGER NOT NULL, status TEXT NOT NULL, status2 TEXT, FOREIGN KEY (parcelaId) REFERENCES parcelas (id) ON DELETE CASCADE
       )
     ''');
     await db.execute('''
@@ -99,18 +93,16 @@ class DatabaseHelper {
         tipoMedidaCAP TEXT NOT NULL,
         valorCAP REAL NOT NULL,
         alturaBase REAL NOT NULL,
-        classe TEXT
+        classe TEXT,
+        id_fazenda TEXT,
+        nome_fazenda TEXT,
+        nome_talhao TEXT,
+        exportada INTEGER DEFAULT 0 NOT NULL
       )
     ''');
     await db.execute('''
       CREATE TABLE cubagens_secoes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        cubagemArvoreId INTEGER NOT NULL,
-        alturaMedicao REAL NOT NULL,
-        circunferencia REAL,
-        casca1_mm REAL,
-        casca2_mm REAL,
-        FOREIGN KEY (cubagemArvoreId) REFERENCES cubagens_arvores (id) ON DELETE CASCADE
+        id INTEGER PRIMARY KEY AUTOINCREMENT, cubagemArvoreId INTEGER NOT NULL, alturaMedicao REAL NOT NULL, circunferencia REAL, casca1_mm REAL, casca2_mm REAL, FOREIGN KEY (cubagemArvoreId) REFERENCES cubagens_arvores (id) ON DELETE CASCADE
       )
     ''');
     await db.execute('CREATE INDEX idx_arvores_parcelaId ON arvores(parcelaId)');
@@ -118,38 +110,91 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Migração para criar a tabela 'arvores' se ela não existir em versões muito antigas
+    // Migrações antigas mantidas por segurança
     if (oldVersion < 2) { 
-        await db.execute('''
-          CREATE TABLE arvores (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            parcelaId INTEGER NOT NULL,
-            cap REAL NOT NULL,
-            altura REAL,
-            linha INTEGER NOT NULL,
-            posicaoNaLinha INTEGER NOT NULL,
-            fimDeLinha INTEGER NOT NULL,
-            dominante INTEGER NOT NULL,
-            status TEXT NOT NULL,
-            FOREIGN KEY (parcelaId) REFERENCES parcelas (id) ON DELETE CASCADE
-          )
-        ''');
+        await db.execute('''CREATE TABLE arvores (id INTEGER PRIMARY KEY AUTOINCREMENT, parcelaId INTEGER NOT NULL, cap REAL NOT NULL, altura REAL, linha INTEGER NOT NULL, posicaoNaLinha INTEGER NOT NULL, fimDeLinha INTEGER NOT NULL, dominante INTEGER NOT NULL, status TEXT NOT NULL, FOREIGN KEY (parcelaId) REFERENCES parcelas (id) ON DELETE CASCADE)''');
     }
-    if (oldVersion < 4) { try { await db.execute('ALTER TABLE arvores ADD COLUMN status2 TEXT'); } catch (e) { print(e); } }
+    if (oldVersion < 4) { try { await db.execute('ALTER TABLE arvores ADD COLUMN status2 TEXT'); } catch (e) { debugPrint("$e"); } }
     if (oldVersion < 5) { await db.execute('DROP TABLE IF EXISTS fustes'); }
-    if (oldVersion < 6) { await db.execute('ALTER TABLE parcelas ADD COLUMN exportada INTEGER DEFAULT 0 NOT NULL'); }
-    if (oldVersion < 7) { await db.execute('''CREATE TABLE cubagens_arvores(id INTEGER PRIMARY KEY AUTOINCREMENT, identificador TEXT NOT NULL, alturaTotal REAL NOT NULL, tipoMedidaCAP TEXT NOT NULL, valorCAP REAL NOT NULL, alturaBase REAL NOT NULL, classe TEXT)'''); }
+    if (oldVersion < 6) { try { await db.execute('ALTER TABLE parcelas ADD COLUMN exportada INTEGER DEFAULT 0 NOT NULL'); } catch (e) { debugPrint("$e"); } }
+    if (oldVersion < 7) { try { await db.execute('''CREATE TABLE cubagens_arvores(id INTEGER PRIMARY KEY AUTOINCREMENT, identificador TEXT NOT NULL, alturaTotal REAL NOT NULL, tipoMedidaCAP TEXT NOT NULL, valorCAP REAL NOT NULL, alturaBase REAL NOT NULL, classe TEXT)'''); } catch(e) { debugPrint("$e"); } }
     if (oldVersion < 8) {
       await db.execute('DROP TABLE IF EXISTS cubagens_secoes');
       await db.execute('''CREATE TABLE cubagens_secoes(id INTEGER PRIMARY KEY AUTOINCREMENT, cubagemArvoreId INTEGER NOT NULL, alturaMedicao REAL NOT NULL, circunferencia REAL, casca1_mm REAL, casca2_mm REAL, FOREIGN KEY (cubagemArvoreId) REFERENCES cubagens_arvores (id) ON DELETE CASCADE)''');
       await db.execute('CREATE INDEX idx_cubagens_secoes_cubagemArvoreId ON cubagens_secoes(cubagemArvoreId)');
     }
     if (oldVersion < 9) {
-      try { await db.execute('ALTER TABLE parcelas ADD COLUMN idFazenda TEXT'); } catch (e) { print(e); }
-      try { await db.execute('ALTER TABLE parcelas ADD COLUMN largura REAL'); } catch (e) { print(e); }
-      try { await db.execute('ALTER TABLE parcelas ADD COLUMN comprimento REAL'); } catch (e) { print(e); }
-      try { await db.execute('ALTER TABLE parcelas ADD COLUMN raio REAL'); } catch (e) { print(e); }
+      try { await db.execute('ALTER TABLE parcelas ADD COLUMN idFazenda TEXT'); } catch (e) { debugPrint("$e"); }
+      try { await db.execute('ALTER TABLE parcelas ADD COLUMN largura REAL'); } catch (e) { debugPrint("$e"); }
+      try { await db.execute('ALTER TABLE parcelas ADD COLUMN comprimento REAL'); } catch (e) { debugPrint("$e"); }
+      try { await db.execute('ALTER TABLE parcelas ADD COLUMN raio REAL'); } catch (e) { debugPrint("$e"); }
     }
+    if (oldVersion < 10) {
+      try { await db.execute('ALTER TABLE cubagens_arvores ADD COLUMN id_fazenda TEXT'); } catch (e) { debugPrint("$e"); }
+      try { await db.execute('ALTER TABLE cubagens_arvores ADD COLUMN nome_fazenda TEXT'); } catch (e) { debugPrint("$e"); }
+      try { await db.execute('ALTER TABLE cubagens_arvores ADD COLUMN nome_talhao TEXT'); } catch (e) { debugPrint("$e"); }
+    }
+    if (oldVersion < 12) {
+      try { await db.execute('ALTER TABLE cubagens_arvores ADD COLUMN exportada INTEGER DEFAULT 0 NOT NULL;'); } catch (e) { debugPrint("$e"); }
+    }
+
+    // 3. NOVA MIGRAÇÃO PARA ADICIONAR A COLUNA EM BANCOS EXISTENTES
+    if (oldVersion < 13) {
+      try {
+        await db.execute('ALTER TABLE parcelas ADD COLUMN isSynced INTEGER DEFAULT 0 NOT NULL;');
+        debugPrint('Coluna "isSynced" adicionada à tabela "parcelas" com sucesso.');
+      } catch (e) {
+        // Ignora o erro se a coluna já existir (não deve acontecer, mas é seguro)
+        debugPrint('Erro ao adicionar coluna isSynced (pode já existir): $e');
+      }
+    }
+  }
+
+  // ==========================================================
+  // 4. NOVOS MÉTODOS PARA SINCRONIZAÇÃO ADICIONADOS AQUI
+  // ==========================================================
+
+  /// Busca no banco de dados todas as parcelas que ainda não foram sincronizadas.
+  /// Uma parcela é considerada não sincronizada se o campo `isSynced` for 0.
+  Future<List<Parcela>> getUnsyncedParcelas() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'parcelas',
+      where: 'isSynced = ?',
+      whereArgs: [0], // 0 representa 'false'
+    );
+    return List.generate(maps.length, (i) => Parcela.fromMap(maps[i]));
+  }
+
+  /// Marca uma parcela específica como sincronizada no banco de dados local.
+  /// Altera o campo `isSynced` para 1 (true) para o ID da parcela fornecido.
+  Future<void> markParcelaAsSynced(int id) async {
+    final db = await database;
+    await db.update(
+      'parcelas',
+      {'isSynced': 1}, // 1 representa 'true'
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    debugPrint('Parcela ID: $id marcada como sincronizada (isSynced=1).');
+  }
+
+  // ==========================================================
+  // O RESTO DA SUA CLASSE CONTINUA IGUAL
+  // ==========================================================
+
+  /// Apaga TODAS as parcelas e, por cascata, todas as árvores.
+  Future<void> limparTodasAsParcelas() async {
+    final db = await database;
+    await db.delete('parcelas');
+    debugPrint('Tabela de parcelas e árvores limpa.');
+  }
+
+  /// Apaga TODAS as cubagens e, por cascata, todas as seções.
+  Future<void> limparTodasAsCubagens() async {
+    final db = await database;
+    await db.delete('cubagens_arvores');
+    debugPrint('Tabela de cubagens e seções limpa.');
   }
 
   Future<void> saveBatchParcelas(List<Parcela> parcelas) async {
@@ -163,11 +208,7 @@ class DatabaseHelper {
 
   Future<List<Parcela>> getParcelasByProject(String nomeFazenda, String nomeTalhao) async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'parcelas',
-      where: 'nomeFazenda = ? AND nomeTalhao = ?',
-      whereArgs: [nomeFazenda, nomeTalhao],
-    );
+    final List<Map<String, dynamic>> maps = await db.query('parcelas', where: 'nomeFazenda = ? AND nomeTalhao = ?', whereArgs: [nomeFazenda, nomeTalhao]);
     return List.generate(maps.length, (i) => Parcela.fromMap(maps[i]));
   }
 
@@ -184,9 +225,12 @@ class DatabaseHelper {
     final db = await database;
     await db.transaction((txn) async {
       int parcelaId;
+      // Garante que a parcela seja marcada como não sincronizada ao salvar/atualizar
+      parcela.isSynced = false; 
       final parcelaMap = parcela.toMap();
       final dataColetaAtual = parcela.dataColeta ?? DateTime.now();
       parcelaMap['dataColeta'] = dataColetaAtual.toIso8601String();
+
       if (parcela.dbId == null) {
         parcelaMap.remove('id');
         parcelaId = await txn.insert('parcelas', parcelaMap);
@@ -222,12 +266,24 @@ class DatabaseHelper {
     final db = await database;
     return await db.delete('parcelas', where: 'id = ?', whereArgs: [id]);
   }
+  
+  Future<void> deletarMultiplasParcelas(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    await db.delete(
+      'parcelas',
+      where: 'id IN (${List.filled(ids.length, '?').join(',')})',
+      whereArgs: ids,
+    );
+  }
 
   Future<int> updateParcela(Parcela parcela) async {
     final db = await database;
     return await db.update('parcelas', parcela.toMap(), where: 'id = ?', whereArgs: [parcela.dbId]);
   }
 
+  // Demais métodos (exportar, limpar, etc.) continuam os mesmos
+  // ...
   Future<void> exportarDados(BuildContext context) async {
     final tipoExportacao = await showDialog<String>(
       context: context,
@@ -249,9 +305,7 @@ class DatabaseHelper {
       : await db.query('parcelas');
 
     if (parcelasMaps.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhuma parcela para exportar neste critério.'), backgroundColor: Colors.orange));
-      }
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhuma parcela para exportar neste critério.'), backgroundColor: Colors.orange));
       return;
     }
 
@@ -263,7 +317,6 @@ class DatabaseHelper {
       final nomesAjudantes = prefs.getString('nomes_ajudantes') ?? 'N/A';
       final nomeZona = prefs.getString('zona_utm_selecionada') ?? 'SIRGAS 2000 / UTM Zona 22S';
       final codigoEpsg = zonasUtmSirgas2000[nomeZona]!;
-
       final projWGS84 = proj4.Projection.get('EPSG:4326')!;
       final projUTM = proj4.Projection.get('EPSG:$codigoEpsg')!;
 
@@ -302,9 +355,8 @@ class DatabaseHelper {
       final path = '${pastaDoDia.path}/$fileName';
       await File(path).writeAsString(const ListToCsvConverter().convert(rows));
 
-      if (tipoExportacao == 'nao_exportadas') {
-         await db.update('parcelas', {'exportada': 1}, where: 'id IN (${idsParaMarcar.map((_) => '?').join(',')})', whereArgs: idsParaMarcar);
-      }
+      await db.update('parcelas', {'exportada': 1}, where: 'id IN (${idsParaMarcar.map((_) => '?').join(',')})', whereArgs: idsParaMarcar);
+      
       if (context.mounted) {
         ScaffoldMessenger.of(context).removeCurrentSnackBar();
         await Share.shareXFiles([XFile(path)], subject: 'Exportação GeoForest');
@@ -314,7 +366,7 @@ class DatabaseHelper {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Falha na exportação: ${e.toString()}'), backgroundColor: Colors.red));
     }
   }
-
+  
   Future<int> limparParcelasExportadas() async {
     final db = await database;
     final count = await db.delete('parcelas', where: 'exportada = ?', whereArgs: [1]);
@@ -327,12 +379,13 @@ class DatabaseHelper {
     final db = await database;
     await db.transaction((txn) async {
       int arvoreId;
+      final dbMap = arvore.toMap();
       if (arvore.id == null) {
-        arvoreId = await txn.insert('cubagens_arvores', arvore.toMap());
+        arvoreId = await txn.insert('cubagens_arvores', dbMap);
         arvore.id = arvoreId;
       } else {
         arvoreId = arvore.id!;
-        await txn.update('cubagens_arvores', arvore.toMap(), where: 'id = ?', whereArgs: [arvoreId]);
+        await txn.update('cubagens_arvores', dbMap, where: 'id = ?', whereArgs: [arvoreId]);
       }
       await txn.delete('cubagens_secoes', where: 'cubagemArvoreId = ?', whereArgs: [arvoreId]);
       for (var secao in secoes) {
@@ -350,12 +403,7 @@ class DatabaseHelper {
 
   Future<List<CubagemSecao>> getSecoesPorArvoreId(int arvoreId) async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'cubagens_secoes',
-      where: 'cubagemArvoreId = ?',
-      whereArgs: [arvoreId],
-      orderBy: 'alturaMedicao ASC',
-    );
+    final List<Map<String, dynamic>> maps = await db.query('cubagens_secoes', where: 'cubagemArvoreId = ?', whereArgs: [arvoreId], orderBy: 'alturaMedicao ASC');
     return List.generate(maps.length, (i) => CubagemSecao.fromMap(maps[i]));
   }
 
@@ -364,22 +412,55 @@ class DatabaseHelper {
     await db.delete('cubagens_arvores', where: 'id = ?', whereArgs: [id]);
   }
 
+  Future<void> deletarMultiplasCubagens(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    await db.delete(
+      'cubagens_arvores',
+      where: 'id IN (${List.filled(ids.length, '?').join(',')})',
+      whereArgs: ids,
+    );
+  }
+
   Future<void> exportarCubagens(BuildContext context) async {
-    final List<CubagemArvore> arvores = await getTodasCubagens();
-    if (arvores.isEmpty) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhuma cubagem para exportar.')));
+    final tipoExportacao = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Exportar Cubagens'),
+        content: const Text('Quais cubagens você deseja exportar?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, 'nao_exportadas'), child: const Text('Apenas Novas')),
+          TextButton(onPressed: () => Navigator.pop(context, 'todas'), child: const Text('Exportar Tudo')),
+          TextButton(onPressed: () => Navigator.pop(context, 'cancelar'), child: const Text('Cancelar', style: TextStyle(color: Colors.grey))),
+        ],
+      ),
+    );
+    if (tipoExportacao == null || tipoExportacao == 'cancelar') return;
+
+    final db = await database;
+    final List<Map<String, dynamic>> arvoresMaps = (tipoExportacao == 'nao_exportadas')
+      ? await db.query('cubagens_arvores', where: 'exportada = 0')
+      : await db.query('cubagens_arvores');
+    
+    if (arvoresMaps.isEmpty) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhuma cubagem para exportar neste critério.'), backgroundColor: Colors.orange));
       return;
     }
+    
+    List<CubagemArvore> arvores = arvoresMaps.map((map) => CubagemArvore.fromMap(map)).toList();
+    List<int> idsParaMarcar = [];
 
     List<List<dynamic>> rows = [];
-    rows.add(['id_arvore_db', 'identificador_arvore', 'altura_total_m', 'cap_cm', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
+    rows.add(['id_arvore_db', 'id_fazenda', 'fazenda', 'talhao', 'identificador_arvore', 'altura_total_m', 'cap_cm', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
+    
     for (var arvore in arvores) {
+      idsParaMarcar.add(arvore.id!);
       final secoes = await getSecoesPorArvoreId(arvore.id!);
       if (secoes.isEmpty) {
-         rows.add([arvore.id, arvore.identificador, arvore.alturaTotal, arvore.valorCAP, null, null, null, null, null, null]);
+         rows.add([arvore.id, arvore.idFazenda, arvore.nomeFazenda, arvore.nomeTalhao, arvore.identificador, arvore.alturaTotal, arvore.valorCAP, null, null, null, null, null, null]);
       } else {
         for (var secao in secoes) {
-          rows.add([ arvore.id, arvore.identificador, arvore.alturaTotal, arvore.valorCAP, secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm, secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2) ]);
+          rows.add([ arvore.id, arvore.idFazenda, arvore.nomeFazenda, arvore.nomeTalhao, arvore.identificador, arvore.alturaTotal, arvore.valorCAP, secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm, secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2) ]);
         }
       }
     }
@@ -395,9 +476,12 @@ class DatabaseHelper {
       final path = '${pastaDoDia.path}/$fileName';
       final csvData = const ListToCsvConverter().convert(rows);
       await File(path).writeAsString(csvData);
+
+      await db.update('cubagens_arvores', {'exportada': 1}, where: 'id IN (${idsParaMarcar.map((_) => '?').join(',')})', whereArgs: idsParaMarcar);
+
       if (context.mounted) {
           ScaffoldMessenger.of(context).removeCurrentSnackBar();
-          await Share.shareXFiles([XFile(path)], subject: 'Exportação de Todas as Cubagens');
+          await Share.shareXFiles([XFile(path)], subject: 'Exportação de Cubagens');
       }
     } catch (e, s) {
         debugPrint('Erro na exportação de cubagens: $e\n$s');
@@ -413,17 +497,18 @@ class DatabaseHelper {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Árvore não encontrada.')));
       return;
     }
-
+    
     final arvore = CubagemArvore.fromMap(arvoreMaps.first);
     final secoes = await getSecoesPorArvoreId(arvore.id!);
 
     List<List<dynamic>> rows = [];
-    rows.add(['identificador_arvore', 'altura_total_m', 'tipo_medida_cap', 'valor_cap_cm', 'altura_base_m', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
+    rows.add(['id_fazenda', 'fazenda', 'talhao', 'identificador_arvore', 'altura_total_m', 'tipo_medida_cap', 'valor_cap_cm', 'altura_base_m', 'altura_medicao_m', 'circunferencia_cm', 'casca1_mm', 'casca2_mm', 'diametro_cc_cm', 'diametro_sc_cm']);
+    
     if (secoes.isEmpty) {
-      rows.add([arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase, null, null, null, null, null, null]);
+      rows.add([arvore.idFazenda, arvore.nomeFazenda, arvore.nomeTalhao, arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase, null, null, null, null, null, null]);
     } else {
       for (var secao in secoes) {
-        rows.add([ arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase, secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm, secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2) ]);
+        rows.add([ arvore.idFazenda, arvore.nomeFazenda, arvore.nomeTalhao, arvore.identificador, arvore.alturaTotal, arvore.tipoMedidaCAP, arvore.valorCAP, arvore.alturaBase, secao.alturaMedicao, secao.circunferencia, secao.casca1_mm, secao.casca2_mm, secao.diametroComCasca.toStringAsFixed(2), secao.diametroSemCasca.toStringAsFixed(2) ]);
       }
     }
 
