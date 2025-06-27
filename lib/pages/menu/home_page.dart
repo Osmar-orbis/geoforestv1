@@ -8,9 +8,7 @@ import 'package:geoforestcoletor/pages/amostra/lista_coletas_page.dart';
 import 'package:geoforestcoletor/pages/menu/configuracoes_page.dart';
 import 'package:geoforestcoletor/pages/menu/sobre_page.dart';
 import 'package:geoforestcoletor/providers/map_provider.dart';
-import 'package:geoforestcoletor/providers/team_provider.dart';
 import 'package:geoforestcoletor/services/export_service.dart';
-// import 'package:geoforestcoletor/services/sync_service.dart'; // REMOVIDO
 import 'package:geoforestcoletor/widgets/menu_card.dart';
 import 'package:provider/provider.dart';
 
@@ -60,8 +58,6 @@ class _HomePageState extends State<HomePage> {
   // }
 
   void _iniciarNovaColeta(BuildContext context) {
-    final teamProvider = Provider.of<TeamProvider>(context, listen: false);
-    
     final novaParcelaAvulsa = Parcela(
       nomeFazenda: '',
       nomeTalhao: '',
@@ -69,8 +65,6 @@ class _HomePageState extends State<HomePage> {
       areaMetrosQuadrados: 0,
       status: StatusParcela.pendente,
       dataColeta: DateTime.now(),
-      nomeLider: teamProvider.lider,
-      nomesAjudantes: teamProvider.ajudantes,
       // REMOVIDO: isSynced: false,
       // REMOVIDO: clientId: _currentClientId, // Se você adicionou o clientId, ele ainda pode ser útil para organização local ou exportação.
     );
