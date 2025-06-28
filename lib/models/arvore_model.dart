@@ -1,33 +1,13 @@
-// lib/models/arvore_model.dart (VERSÃO SEM VOLUME)
+// lib/models/arvore_model.dart (VERSÃO COM CAMPO 'volume')
 
-enum StatusArvore {
-  normal,
-  falha,
-  bifurcada,
-  multipla,
-  quebrada,
-  morta,
-  caida,
-  ataquemacaco,
-  regenaracao,
-  inclinada,
-  fogo,
-  formiga,
-  outro
+enum Codigo {
+  normal, falha, bifurcada, multipla, quebrada, morta, caida,
+  ataquemacaco, regenaracao, inclinada, fogo, formiga, outro
 }
 
-enum StatusArvore2 {
-  bifurcada,
-  multipla,
-  quebrada,
-  morta,
-  caida,
-  ataquemacaco,
-  regenaracao,
-  inclinada,
-  fogo,
-  formiga,
-  outro
+enum Codigo2 {
+  bifurcada, multipla, quebrada, morta, caida, ataquemacaco,
+  regenaracao, inclinada, fogo, formiga, outro
 }
 
 class Arvore {
@@ -38,8 +18,15 @@ class Arvore {
   final int posicaoNaLinha;
   final bool fimDeLinha;
   bool dominante;
-  final StatusArvore status;
-  final StatusArvore2? status2;
+  final Codigo codigo;
+  final Codigo2? codigo2;
+  final double? capAuditoria;
+  final double? alturaAuditoria;
+  
+  // <<< CAMPO DE VOLUME REINTRODUZIDO >>>
+  // Este campo não será salvo no banco, mas pode ser calculado e usado
+  // durante as análises em tempo de execução.
+  double? volume;
 
   Arvore({
     this.id,
@@ -49,8 +36,11 @@ class Arvore {
     required this.posicaoNaLinha,
     this.fimDeLinha = false,
     this.dominante = false,
-    required this.status,
-    this.status2,
+    required this.codigo,
+    this.codigo2,
+    this.capAuditoria,
+    this.alturaAuditoria,
+    this.volume, // Parâmetro opcional no construtor
   });
 
   Arvore copyWith({
@@ -61,8 +51,11 @@ class Arvore {
     int? posicaoNaLinha,
     bool? fimDeLinha,
     bool? dominante,
-    StatusArvore? status,
-    StatusArvore2? status2,
+    Codigo? codigo,
+    Codigo2? codigo2,
+    double? capAuditoria,
+    double? alturaAuditoria,
+    double? volume,
   }) {
     return Arvore(
       id: id ?? this.id,
@@ -72,8 +65,11 @@ class Arvore {
       posicaoNaLinha: posicaoNaLinha ?? this.posicaoNaLinha,
       fimDeLinha: fimDeLinha ?? this.fimDeLinha,
       dominante: dominante ?? this.dominante,
-      status: status ?? this.status,
-      status2: status2 ?? this.status2,
+      codigo: codigo ?? this.codigo,
+      codigo2: codigo2 ?? this.codigo2,
+      capAuditoria: capAuditoria ?? this.capAuditoria,
+      alturaAuditoria: alturaAuditoria ?? this.alturaAuditoria,
+      volume: volume ?? this.volume,
     );
   }
 
@@ -86,8 +82,10 @@ class Arvore {
       'posicaoNaLinha': posicaoNaLinha,
       'fimDeLinha': fimDeLinha ? 1 : 0,
       'dominante': dominante ? 1 : 0,
-      'status': status.name,
-      'status2': status2?.name,
+      'status': codigo.name,
+      'status2': codigo2?.name,
+      'capAuditoria': capAuditoria,
+      'alturaAuditoria': alturaAuditoria,
     };
   }
 
@@ -100,8 +98,10 @@ class Arvore {
       posicaoNaLinha: map['posicaoNaLinha'] ?? 0,
       fimDeLinha: map['fimDeLinha'] == 1,
       dominante: map['dominante'] == 1,
-      status: StatusArvore.values.firstWhere((e) => e.name == map['status'], orElse: () => StatusArvore.normal),
-      status2: map['status2'] != null ? StatusArvore2.values.firstWhere((e) => e.name == map['status2']) : null,
+      codigo: Codigo.values.firstWhere((e) => e.name == map['status'], orElse: () => Codigo.normal),
+      codigo2: map['status2'] != null ? Codigo2.values.firstWhere((e) => e.name == map['status2']) : null,
+      capAuditoria: map['capAuditoria']?.toDouble(),
+      alturaAuditoria: map['alturaAuditoria']?.toDouble(),
     );
   }
 }

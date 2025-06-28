@@ -1,4 +1,4 @@
-// lib/models/parcela_model.dart (VERSÃO COMPLETA E CORRIGIDA)
+// lib/models/parcela_model.dart (VERSÃO COM NOVOS CAMPOS)
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/models/arvore_model.dart';
@@ -33,7 +33,10 @@ class Parcela {
   final double? comprimento;
   final double? raio;
 
-  // Campo para carregar as árvores sob demanda, sem afetar o banco de dados.
+  // <<< NOVOS CAMPOS ADICIONADOS AQUI >>>
+  final double? idadeFloresta;
+  final double? areaTalhao;
+
   List<Arvore> arvores;
 
   Parcela({
@@ -54,10 +57,11 @@ class Parcela {
     this.largura,
     this.comprimento,
     this.raio,
-    this.arvores = const [], // Parâmetro novo com valor padrão
+    this.idadeFloresta, // <<< NOVO
+    this.areaTalhao,    // <<< NOVO
+    this.arvores = const [],
   });
 
-  // <<< MÉTODO 'copyWith' RESTAURADO >>>
   Parcela copyWith({
     int? dbId,
     String? idFazenda,
@@ -76,7 +80,9 @@ class Parcela {
     double? largura,
     double? comprimento,
     double? raio,
-    List<Arvore>? arvores, // Também pode copiar a lista de árvores se necessário
+    double? idadeFloresta, // <<< NOVO
+    double? areaTalhao,    // <<< NOVO
+    List<Arvore>? arvores,
   }) {
     return Parcela(
       dbId: dbId ?? this.dbId,
@@ -96,12 +102,13 @@ class Parcela {
       largura: largura ?? this.largura,
       comprimento: comprimento ?? this.comprimento,
       raio: raio ?? this.raio,
+      idadeFloresta: idadeFloresta ?? this.idadeFloresta, // <<< NOVO
+      areaTalhao: areaTalhao ?? this.areaTalhao,          // <<< NOVO
       arvores: arvores ?? this.arvores,
     );
   }
 
   Map<String, dynamic> toMap() {
-    // Este método não salva a lista de 'arvores', o que está correto.
     return {
       'id': dbId,
       'idFazenda': idFazenda,
@@ -120,11 +127,12 @@ class Parcela {
       'largura': largura,
       'comprimento': comprimento,
       'raio': raio,
+      'idadeFloresta': idadeFloresta, // <<< NOVO
+      'areaTalhao': areaTalhao,       // <<< NOVO
     };
   }
 
   factory Parcela.fromMap(Map<String, dynamic> map) {
-    // A lista 'arvores' não é populada aqui, mas no DatabaseHelper, o que está correto.
     return Parcela(
       dbId: map['id'],
       idFazenda: map['idFazenda'],
@@ -146,7 +154,8 @@ class Parcela {
       largura: map['largura'],
       comprimento: map['comprimento'],
       raio: map['raio'],
+      idadeFloresta: map['idadeFloresta'], // <<< NOVO
+      areaTalhao: map['areaTalhao'],       // <<< NOVO
     );
   }
 }
-

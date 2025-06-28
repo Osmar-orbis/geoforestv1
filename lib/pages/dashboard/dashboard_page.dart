@@ -1,5 +1,3 @@
-// lib/pages/dashboard/dashboard_page.dart (VERSÃO FINAL E SEM VOLUME)
-
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -216,7 +214,7 @@ class _DashboardPageState extends State<DashboardPage> {
               getTitlesWidget: (double value, TitleMeta meta) {
                 final binStart = minVal + value * binSize;
                 return SideTitleWidget(
-                  meta: meta,
+                  axisSide: meta.axisSide, // CORREÇÃO AQUI
                   space: 4,
                   child: Text(
                     binStart.toStringAsFixed(0),

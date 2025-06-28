@@ -1,4 +1,4 @@
-// lib/widgets/arvore_dialog.dart (COM LINHA E POSIÇÃO EDITÁVEIS)
+// lib/widgets/arvore_dialog.dart (VERSÃO FINAL COM LAYOUT CORRIGIDO)
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/models/arvore_model.dart';
@@ -43,12 +43,11 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
   final _formKey = GlobalKey<FormState>();
   final _capController = TextEditingController();
   final _alturaController = TextEditingController();
-  // 1. ADICIONE CONTROLLERS PARA LINHA E POSIÇÃO
   final _linhaController = TextEditingController();
   final _posicaoController = TextEditingController();
 
-  late StatusArvore _status;
-  StatusArvore2? _status2;
+  late Codigo _codigo;
+  Codigo2? _codigo2;
   bool _fimDeLinha = false;
   bool _camposHabilitados = true;
 
@@ -59,16 +58,13 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
       final arvore = widget.arvoreParaEditar!;
       _capController.text = arvore.cap.toString().replaceAll('.', ',');
       _alturaController.text = arvore.altura?.toString().replaceAll('.', ',') ?? '';
-      _status = arvore.status;
-      _status2 = arvore.status2;
+      _codigo = arvore.codigo;
+      _codigo2 = arvore.codigo2;
       _fimDeLinha = arvore.fimDeLinha;
-      // 2. PREENCHA OS NOVOS CONTROLLERS COM OS DADOS DA ÁRVORE SENDO EDITADA
       _linhaController.text = arvore.linha.toString();
       _posicaoController.text = arvore.posicaoNaLinha.toString();
-      
     } else {
-      _status = StatusArvore.normal;
-      // No modo de adição, preenchemos com os valores automáticos
+      _codigo = Codigo.normal;
       _linhaController.text = widget.linhaAtual.toString();
       _posicaoController.text = widget.posicaoNaLinhaAtual.toString();
     }
@@ -77,7 +73,7 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
 
   void _atualizarEstadoCampos() {
     setState(() {
-      if (_status == StatusArvore.falha || _status == StatusArvore.caida) {
+      if (_codigo == Codigo.falha || _codigo == Codigo.caida) {
         _camposHabilitados = false;
         _capController.text = '0';
         _alturaController.clear();
@@ -94,7 +90,6 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
   void dispose() {
     _capController.dispose();
     _alturaController.dispose();
-    // 3. FAÇA O DISPOSE DOS NOVOS CONTROLLERS
     _linhaController.dispose();
     _posicaoController.dispose();
     super.dispose();
@@ -104,7 +99,6 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
     if (_formKey.currentState!.validate()) {
       final double cap = double.tryParse(_capController.text.replaceAll(',', '.')) ?? 0.0;
       final double? altura = _alturaController.text.isNotEmpty ? double.tryParse(_alturaController.text.replaceAll(',', '.')) : null;
-      // 4. PEGUE OS VALORES DOS NOVOS CONTROLLERS
       final int linha = int.tryParse(_linhaController.text) ?? widget.linhaAtual;
       final int posicao = int.tryParse(_posicaoController.text) ?? widget.posicaoNaLinhaAtual;
 
@@ -112,13 +106,14 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
         id: widget.arvoreParaEditar?.id,
         cap: cap,
         altura: altura,
-        // 5. USE OS NOVOS VALORES DE LINHA E POSIÇÃO AO CRIAR O OBJETO
         linha: linha,
         posicaoNaLinha: posicao,
-        status: _status,
-        status2: _status2,
+        codigo: _codigo,
+        codigo2: _codigo2,
         fimDeLinha: _fimDeLinha,
         dominante: widget.arvoreParaEditar?.dominante ?? false,
+        capAuditoria: widget.arvoreParaEditar?.capAuditoria,
+        alturaAuditoria: widget.arvoreParaEditar?.alturaAuditoria,
       );
 
       Navigator.of(context).pop(DialogResult(
@@ -133,132 +128,169 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
 
   @override
   Widget build(BuildContext context) {
-    bool hasStatus2 = widget.arvoreParaEditar?.status2 != null || _status2 != null;
+    final theme = Theme.of(context);
 
-    return AlertDialog(
-      title: Text(widget.isEditing
-          ? 'Editar Árvore' // Título simplificado para edição
-          : widget.isAdicionandoFuste
-              ? 'Adicionar Fuste L${widget.linhaAtual}/P${widget.posicaoNaLinhaAtual}'
-              : 'Adicionar Árvore L${widget.linhaAtual}/P${widget.posicaoNaLinhaAtual}'),
-      content: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
+    // <<< MUDANÇA PRINCIPAL: ENVOLVENDO AlertDialog em um Dialog >>>
+    return Dialog(
+      // Permite que o diálogo se aproxime mais das bordas da tela
+      insetPadding: const EdgeInsets.all(16.0),
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // =======================================================
-              // 6. ADICIONE OS CAMPOS DE TEXTO PARA LINHA E POSIÇÃO
-              //    ELES SERÃO HABILITADOS APENAS NO MODO DE EDIÇÃO
-              // =======================================================
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16.0),
-                child: Row(
+              Text(
+                widget.isEditing
+                    ? 'Editar Árvore'
+                    : 'Adicionar Árvore L${_linhaController.text}/P${_posicaoController.text}',
+                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _linhaController,
-                        enabled: widget.isEditing, // HABILITADO APENAS PARA EDIÇÃO
-                        decoration: const InputDecoration(labelText: 'Linha'),
-                        keyboardType: TextInputType.number,
-                        validator: (v) => (v == null || v.isEmpty || int.tryParse(v) == null) ? 'Inválido' : null,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _linhaController,
+                            enabled: true,
+                            decoration: const InputDecoration(labelText: 'Linha'),
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            validator: (v) => (v == null || v.isEmpty || int.tryParse(v) == null) ? 'Inválido' : null,
+                          ),
+                        ),
+                        const SizedBox(width: 24),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _posicaoController,
+                            enabled: true,
+                            decoration: const InputDecoration(labelText: 'Posição'),
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            validator: (v) => (v == null || v.isEmpty || int.tryParse(v) == null) ? 'Inválido' : null,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _posicaoController,
-                        enabled: widget.isEditing, // HABILITADO APENAS PARA EDIÇÃO
-                        decoration: const InputDecoration(labelText: 'Posição'),
-                        keyboardType: TextInputType.number,
-                        validator: (v) => (v == null || v.isEmpty || int.tryParse(v) == null) ? 'Inválido' : null,
-                      ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<Codigo>(
+                      value: _codigo,
+                      decoration: const InputDecoration(labelText: 'Código 1'),
+                      items: Codigo.values.map((s) => DropdownMenuItem(value: s, child: Text(s.name))).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _codigo = value);
+                          _atualizarEstadoCampos();
+                        }
+                      },
                     ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<Codigo2?>(
+                      value: _codigo2,
+                      decoration: const InputDecoration(labelText: 'Código 2 (Opcional)'),
+                      items: [
+                        const DropdownMenuItem(value: null, child: Text('Nenhum')),
+                        ...Codigo2.values.map((s) => DropdownMenuItem(value: s, child: Text(s.name))),
+                      ],
+                      onChanged: (value) => setState(() => _codigo2 = value),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _capController,
+                      enabled: _camposHabilitados,
+                      decoration: const InputDecoration(labelText: 'CAP (cm)'),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      validator: (value) {
+                        if (_camposHabilitados && (value == null || value.isEmpty)) {
+                          return 'Campo obrigatório';
+                        }
+                        if (value != null && value.isNotEmpty && double.tryParse(value.replaceAll(',', '.')) == null) {
+                          return 'Número inválido';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _alturaController,
+                      enabled: _camposHabilitados,
+                      decoration: const InputDecoration(labelText: 'Altura (m) - Opcional'),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                    if (widget.arvoreParaEditar?.capAuditoria != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16.0),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                initialValue: widget.arvoreParaEditar!.capAuditoria!.toStringAsFixed(1).replaceAll('.', ','),
+                                enabled: false,
+                                decoration: const InputDecoration(labelText: 'CAP Anterior (cm)'),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: TextFormField(
+                                initialValue: widget.arvoreParaEditar!.alturaAuditoria?.toStringAsFixed(1).replaceAll('.', ',') ?? '-',
+                                enabled: false,
+                                decoration: const InputDecoration(labelText: 'Altura Anterior (m)'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (!widget.isEditing)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: SwitchListTile(
+                          title: const Text('Fim da linha de plantio?'),
+                          value: _fimDeLinha,
+                          onChanged: (value) => setState(() => _fimDeLinha = value),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
                   ],
                 ),
               ),
-              DropdownButtonFormField<StatusArvore>(
-                value: _status,
-                decoration: const InputDecoration(labelText: 'Status Principal'),
-                items: StatusArvore.values.map((s) => DropdownMenuItem(value: s, child: Text(s.name))).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() => _status = value);
-                    _atualizarEstadoCampos();
-                  }
-                },
-              ),
-              if (hasStatus2) ...[
-                const SizedBox(height: 16),
-                DropdownButtonFormField<StatusArvore2?>(
-                  value: _status2,
-                  decoration: const InputDecoration(labelText: 'Status Secundário (Opcional)'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Nenhum')),
-                    ...StatusArvore2.values.map((s) => DropdownMenuItem(value: s, child: Text(s.name))),
-                  ],
-                  onChanged: (value) => setState(() => _status2 = value),
-                ),
-              ],
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _capController,
-                enabled: _camposHabilitados,
-                decoration: const InputDecoration(labelText: 'CAP (cm)'),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                validator: (value) {
-                  if (_camposHabilitados && (value == null || value.isEmpty)) {
-                    return 'Campo obrigatório';
-                  }
-                  if (value != null && value.isNotEmpty && double.tryParse(value.replaceAll(',', '.')) == null) {
-                    return 'Número inválido';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _alturaController,
-                enabled: _camposHabilitados,
-                decoration: const InputDecoration(labelText: 'Altura (m) - Opcional'),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              ),
-              if (!widget.isEditing)
-                SwitchListTile(
-                  title: const Text('Fim da linha de plantio?'),
-                  value: _fimDeLinha,
-                  onChanged: (value) => setState(() => _fimDeLinha = value),
-                ),
+              const SizedBox(height: 24),
+              // <<< MUDANÇA: Usando Wrap para garantir que os botões quebrem a linha se necessário >>>
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8.0,
+                runSpacing: 8.0,
+                children: widget.isEditing
+                    ? [
+                        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+                        TextButton(onPressed: () => _submit(atualizarEAnterior: true), child: const Text('Anterior')),
+                        ElevatedButton(onPressed: () => _submit(), child: const Text('Atualizar')),
+                        TextButton(onPressed: () => _submit(atualizarEProximo: true), child: const Text('Próximo')),
+                      ]
+                    : [
+                        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+                        ElevatedButton(onPressed: () => _submit(mesmoFuste: true), child: const Text('Adic. Fuste')),
+                        ElevatedButton(
+                          onPressed: () => _submit(proxima: true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: theme.colorScheme.primary,
+                            foregroundColor: theme.colorScheme.onPrimary,
+                          ),
+                          child: const Text('Salvar e Próximo'),
+                        ),
+                      ],
+              )
             ],
           ),
         ),
       ),
-      actions: <Widget>[
-        Wrap(
-          alignment: WrapAlignment.end,
-          spacing: 8.0,
-          children: widget.isEditing
-              ? [
-                  TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
-                  TextButton(onPressed: () => _submit(atualizarEAnterior: true), child: const Text('Atualizar Ant.')),
-                  ElevatedButton(onPressed: () => _submit(), child: const Text('Atualizar')),
-                  ElevatedButton(
-                    onPressed: () => _submit(atualizarEProximo: true),
-                    style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor),
-                    child: const Text('Atualizar Próx.'),
-                  ),
-                ]
-              : [
-                  TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
-                  ElevatedButton(onPressed: () => _submit(mesmoFuste: true), child: const Text('Adic. Fuste')),
-                  ElevatedButton(
-                    onPressed: () => _submit(proxima: true),
-                    style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor),
-                    child: const Text('Salvar e Próximo'),
-                  ),
-                ],
-        )
-      ],
     );
   }
 }

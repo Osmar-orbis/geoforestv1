@@ -8,6 +8,7 @@ import 'package:geoforestcoletor/services/analysis_service.dart';
 import 'package:geoforestcoletor/services/pdf_service.dart';
 import 'package:geoforestcoletor/widgets/grafico_distribuicao_widget.dart';
 import 'package:geoforestcoletor/pages/analises/simulacao_desbaste_page.dart';
+import 'package:geoforestcoletor/pages/analises/rendimento_dap_page.dart';
 
 class TalhaoDashboardPage extends StatefulWidget {
   final String nomeFazenda;
@@ -69,21 +70,28 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
     );
   }
 
+  // <<< MÉTODO ATUALIZADO >>>
   void _analisarRendimento() {
-    final resultadoRendimento = _analysisService.analisarRendimentoPorHectare(_parcelasDoTalhao, _arvoresDoTalhao);
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Análise de Rendimento Comercial'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: resultadoRendimento.volumePorHectare.entries.map((entry) {
-              return _buildStatRow('${entry.key.descricao}:', '${entry.value.toStringAsFixed(2)} m³/ha');
-            }).toList(),
-          ),
+    if (_analysisResult == null) return;
+
+    final resultadoRendimento = _analysisService.analisarRendimentoPorDAP(_parcelasDoTalhao, _arvoresDoTalhao);
+
+    if (resultadoRendimento.isEmpty && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não há dados suficientes para a análise de rendimento.'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RendimentoDapPage(
+          nomeFazenda: widget.nomeFazenda,
+          nomeTalhao: widget.nomeTalhao,
+          dadosRendimento: resultadoRendimento,
+          analiseGeral: _analysisResult!, // Passando a análise geral
         ),
-        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Fechar'))],
       ),
     );
   }

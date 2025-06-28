@@ -1,3 +1,5 @@
+// lib/data/datasources/local/database_helper.dart (VERSÃO 17 - COMPLETA)
+
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
@@ -45,7 +47,8 @@ class DatabaseHelper {
     });
     return await openDatabase(
       join(await getDatabasesPath(), 'geoforestcoletor.db'),
-      version: 14, 
+      // <<< MUDANÇA: VERSÃO INCREMENTADA >>>
+      version: 17,
       onConfigure: _onConfigure,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -57,6 +60,7 @@ class DatabaseHelper {
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    // <<< MUDANÇA: ADICIONANDO NOVAS COLUNAS NA CRIAÇÃO >>>
     await db.execute('''
       CREATE TABLE parcelas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,12 +79,27 @@ class DatabaseHelper {
         largura REAL,
         comprimento REAL,
         raio REAL,
-        isSynced INTEGER DEFAULT 0 NOT NULL
+        isSynced INTEGER DEFAULT 0 NOT NULL,
+        idadeFloresta REAL,
+        areaTalhao REAL
       )
     ''');
     await db.execute('''
       CREATE TABLE arvores (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, parcelaId INTEGER NOT NULL, cap REAL NOT NULL, altura REAL, linha INTEGER NOT NULL, posicaoNaLinha INTEGER NOT NULL, fimDeLinha INTEGER NOT NULL, dominante INTEGER NOT NULL, status TEXT NOT NULL, status2 TEXT, FOREIGN KEY (parcelaId) REFERENCES parcelas (id) ON DELETE CASCADE
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        parcelaId INTEGER NOT NULL, 
+        cap REAL NOT NULL, 
+        altura REAL, 
+        linha INTEGER NOT NULL, 
+        posicaoNaLinha INTEGER NOT NULL, 
+        fimDeLinha INTEGER NOT NULL, 
+        dominante INTEGER NOT NULL, 
+        status TEXT NOT NULL, 
+        status2 TEXT,
+        observacao TEXT,
+        capAuditoria REAL,
+        alturaAuditoria REAL,
+        FOREIGN KEY (parcelaId) REFERENCES parcelas (id) ON DELETE CASCADE
       )
     ''');
     await db.execute('''
@@ -172,11 +191,34 @@ class DatabaseHelper {
         debugPrint('Erro ao criar a tabela "talhoes" (pode já existir): $e');
       }
     }
+    if (oldVersion < 15) {
+      try {
+        await db.execute('ALTER TABLE arvores ADD COLUMN observacao TEXT;');
+        debugPrint('Coluna "observacao" adicionada à tabela "arvores" com sucesso.');
+      } catch (e) {
+        debugPrint('Erro ao adicionar coluna observacao (pode já existir): $e');
+      }
+    }
+    if (oldVersion < 16) {
+      try {
+        await db.execute('ALTER TABLE arvores ADD COLUMN capAuditoria REAL;');
+        await db.execute('ALTER TABLE arvores ADD COLUMN alturaAuditoria REAL;');
+        debugPrint('Colunas de auditoria adicionadas à tabela "arvores" com sucesso.');
+      } catch (e) {
+        debugPrint('Erro ao adicionar colunas de auditoria (podem já existir): $e');
+      }
+    }
+    // <<< MUDANÇA: ADICIONANDO A NOVA MIGRAÇÃO >>>
+    if (oldVersion < 17) {
+      try {
+        await db.execute('ALTER TABLE parcelas ADD COLUMN idadeFloresta REAL;');
+        await db.execute('ALTER TABLE parcelas ADD COLUMN areaTalhao REAL;');
+        debugPrint('Colunas idadeFloresta e areaTalhao adicionadas à tabela "parcelas".');
+      } catch (e) {
+        debugPrint('Erro ao adicionar colunas de info adicionais (podem já existir): $e');
+      }
+    }
   }
-
-  // ==========================================================
-  // MÉTODOS DE SINCRONIZAÇÃO
-  // ==========================================================
 
   Future<List<Parcela>> getUnsyncedParcelas() async {
     final db = await database;
@@ -198,10 +240,6 @@ class DatabaseHelper {
     );
     debugPrint('Parcela ID: $id marcada como sincronizada (isSynced=1).');
   }
-
-  // ==========================================================
-  // MÉTODOS CRUD E HELPER (PARCELAS E ÁRVORES)
-  // ==========================================================
 
   Future<void> limparTodasAsParcelas() async {
     final db = await database;
@@ -300,12 +338,6 @@ class DatabaseHelper {
     return count;
   }
 
-  // ==========================================================
-  // >>>>> MÉTODOS PARA ANÁLISE DE DADOS <<<<<
-  // ==========================================================
-
-  /// Retorna um mapa com todas as fazendas e seus respectivos talhões que possuem
-  /// pelo menos uma parcela com status "Concluída".
   Future<Map<String, List<String>>> getProjetosDisponiveis() async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
@@ -329,7 +361,6 @@ class DatabaseHelper {
     return projetos;
   }
 
-  /// Retorna todas as parcelas de um talhão, já com suas respectivas listas de árvores populadas.
   Future<List<Parcela>> getParcelasComArvores(String nomeFazenda, String nomeTalhao) async {
     final db = await database;
     final List<Map<String, dynamic>> parcelasMaps = await db.query(
@@ -354,9 +385,6 @@ class DatabaseHelper {
     return parcelas;
   }
 
-  // <<< NOVO MÉTODO ADICIONADO AQUI
-  /// Retorna a lista de parcelas concluídas e a lista agregada de todas as suas árvores
-  /// para um determinado projeto (fazenda/talhão).
   Future<Map<String, dynamic>> getDadosAgregadosDoTalhao(String nomeFazenda, String nomeTalhao) async {
     final List<Parcela> parcelas = await getParcelasByProject(nomeFazenda, nomeTalhao);
     final List<Parcela> parcelasConcluidas = parcelas.where((p) => p.status == StatusParcela.concluida).toList();
@@ -375,10 +403,6 @@ class DatabaseHelper {
     };
   }
 
-  // ==========================================================
-  // MÉTODOS CRUD E HELPER (CUBAGEM)
-  // ==========================================================
-  
   Future<void> limparTodasAsCubagens() async {
     final db = await database;
     await db.delete('cubagens_arvores');
@@ -474,7 +498,6 @@ class DatabaseHelper {
     }
   }
 
-  /// Retorna um mapa de {Status da Árvore: Quantidade} para o gráfico de pizza.
   Future<Map<String, double>> getDistribuicaoPorStatus(int parcelaId) async {
     final db = await database;
     final List<Map<String, dynamic>> result = await db.rawQuery('''
@@ -488,7 +511,6 @@ class DatabaseHelper {
     return { for (var row in result) row['status']: (row['total'] as int).toDouble() };
   }
 
-  /// Retorna uma lista com todos os valores de CAP de uma parcela para o histograma.
   Future<List<double>> getValoresCAP(int parcelaId) async {
       final db = await database;
       final List<Map<String, dynamic>> result = await db.rawQuery(
@@ -497,10 +519,6 @@ class DatabaseHelper {
       if (result.isEmpty) return [];
       return result.map((row) => row['cap'] as double).toList();
   }
-
-  // =========================================================================
-  // MÉTODOS DE EXPORTAÇÃO
-  // =========================================================================
 
   Future<void> exportarDados(BuildContext context) async {
     final tipoExportacao = await showDialog<String>(
@@ -591,7 +609,7 @@ class DatabaseHelper {
           for (final arvore in arvores) {
             String posKey = '${arvore.linha}-${arvore.posicaoNaLinha}';
             fusteCounter[posKey] = (fusteCounter[posKey] ?? 0) + 1;
-            rows.add([ nomeLider, nomesAjudantes, parcelaMap['id'], parcelaMap['idFazenda'], parcelaMap['nomeFazenda'], parcelaMap['nomeTalhao'], parcelaMap['idParcela'], parcelaMap['areaMetrosQuadrados'], parcelaMap['largura'], parcelaMap['comprimento'], parcelaMap['raio'], parcelaMap['espacamento'], parcelaMap['observacao'], easting, northing, parcelaMap['dataColeta'], parcelaMap['status'], arvore.linha, arvore.posicaoNaLinha, fusteCounter[posKey], arvore.status.name, arvore.status2?.name, arvore.cap, arvore.altura, arvore.dominante ? 'Sim' : 'Não' ]);
+            rows.add([ nomeLider, nomesAjudantes, parcelaMap['id'], parcelaMap['idFazenda'], parcelaMap['nomeFazenda'], parcelaMap['nomeTalhao'], parcelaMap['idParcela'], parcelaMap['areaMetrosQuadrados'], parcelaMap['largura'], parcelaMap['comprimento'], parcelaMap['raio'], parcelaMap['espacamento'], parcelaMap['observacao'], easting, northing, parcelaMap['dataColeta'], parcelaMap['status'], arvore.linha, arvore.posicaoNaLinha, fusteCounter[posKey], arvore.codigo.name, arvore.codigo2?.name, arvore.cap, arvore.altura, arvore.dominante ? 'Sim' : 'Não' ]);
           }
         }
       }

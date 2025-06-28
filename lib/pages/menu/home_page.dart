@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
-import 'package:geoforestcoletor/pages/amostra/lista_coletas_page.dart';
+import 'package:geoforestcoletor/pages/amostra/lista_projetos_page.dart';
 import 'package:geoforestcoletor/pages/menu/configuracoes_page.dart';
 import 'package:geoforestcoletor/pages/menu/sobre_page.dart';
 import 'package:geoforestcoletor/providers/map_provider.dart';

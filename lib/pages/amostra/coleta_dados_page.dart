@@ -1,4 +1,4 @@
-// lib/pages/amostra/coleta_dados_page.dart (CÓDIGO CORRIGIDO E COMPLETO)
+// lib/pages/amostra/coleta_dados_page.dart (VERSÃO FINAL COM DIÁLOGO)
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -6,15 +6,13 @@ import 'dart:math' as math;
 import 'package:geoforestcoletor/models/parcela_model.dart';
 import 'package:geoforestcoletor/pages/amostra/inventario_page.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
+// <<< MUDANÇA: IMPORTANDO O NOVO DIÁLOGO >>>
+import 'package:geoforestcoletor/widgets/informacoes_adicionais_dialog.dart';
 
 enum FormaParcela { retangular, circular }
 
 class ColetaDadosPage extends StatefulWidget {
-  // CORRIGIDO: A propriedade do Widget volta a ser 'final', como deve ser.
-  // A classe Widget é imutável.
   final Parcela parcelaParaEditar;
-
-  // CORRIGIDO: Adicionado 'const' ao construtor.
   const ColetaDadosPage({super.key, required this.parcelaParaEditar});
 
   @override
@@ -24,20 +22,17 @@ class ColetaDadosPage extends StatefulWidget {
 class _ColetaDadosPageState extends State<ColetaDadosPage> {
   final _formKey = GlobalKey<FormState>();
   final dbHelper = DatabaseHelper();
-
-  // NOVO ESTADO: Esta é a variável que guardará a parcela atual e que pode ser modificada.
-  // Ela vive dentro da classe State, que é o lugar correto para estados mutáveis.
   late Parcela _parcelaAtual;
 
   final _nomeFazendaController = TextEditingController();
   final _idFazendaController = TextEditingController();
   final _talhaoParcelaController = TextEditingController();
   final _idParcelaController = TextEditingController();
-  final _espacamentoController = TextEditingController();
   final _observacaoController = TextEditingController();
   final _larguraController = TextEditingController();
   final _comprimentoController = TextEditingController();
   final _raioController = TextEditingController();
+  // <<< MUDANÇA: REMOÇÃO DO _espacamentoController >>>
 
   Position? _posicaoAtual;
   bool _buscandoLocalizacao = false;
@@ -50,9 +45,7 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
   @override
   void initState() {
     super.initState();
-    // Inicializamos nosso estado mutável com o valor inicial passado pelo widget.
     _parcelaAtual = widget.parcelaParaEditar;
-
     _carregarDadosDaParcela();
     _larguraController.addListener(_calcularArea);
     _comprimentoController.addListener(_calcularArea);
@@ -60,14 +53,12 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
   }
 
   Future<void> _carregarDadosDaParcela() async {
-    // Usamos a variável de estado `_parcelaAtual` para a lógica.
     if (_parcelaAtual.dbId != null) {
       final parcelaDoBanco = await dbHelper.getParcelaById(_parcelaAtual.dbId!);
       final arvores = await dbHelper.getArvoresDaParcela(_parcelaAtual.dbId!);
 
       if (parcelaDoBanco != null && mounted) {
         setState(() {
-          // CORRIGIDO: Atualizamos a variável de estado, não a do widget.
           _parcelaAtual = parcelaDoBanco;
           _temArvoresColetadas = arvores.isNotEmpty;
         });
@@ -77,13 +68,12 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
   }
 
   void _preencherDadosIniciais() {
-    // Usamos a variável de estado `_parcelaAtual` para preencher os campos.
     final p = _parcelaAtual;
     _nomeFazendaController.text = p.nomeFazenda;
     _idFazendaController.text = p.idFazenda ?? '';
     _talhaoParcelaController.text = p.nomeTalhao;
     _idParcelaController.text = p.idParcela;
-    _espacamentoController.text = p.espacamento ?? '';
+    // <<< MUDANÇA: O _espacamentoController não é mais preenchido aqui >>>
     _observacaoController.text = p.observacao ?? '';
     _areaCalculada = p.areaMetrosQuadrados;
 
@@ -108,7 +98,7 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
     _idFazendaController.dispose();
     _talhaoParcelaController.dispose();
     _idParcelaController.dispose();
-    _espacamentoController.dispose();
+    // <<< MUDANÇA: O _espacamentoController não é mais removido daqui >>>
     _observacaoController.dispose();
     _larguraController.dispose();
     _comprimentoController.dispose();
@@ -130,14 +120,13 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
   }
 
   Parcela _construirObjetoParcela() {
-    // Usamos `_parcelaAtual` como base para construir o novo objeto.
+    // <<< MUDANÇA: O espaçamento já está em _parcelaAtual, não precisa ser pego de um controller >>>
     return _parcelaAtual.copyWith(
       nomeFazenda: _nomeFazendaController.text.trim(),
       idFazenda: _idFazendaController.text.trim().isNotEmpty ? _idFazendaController.text.trim() : null,
       nomeTalhao: _talhaoParcelaController.text.trim(),
       idParcela: _idParcelaController.text.trim(),
       areaMetrosQuadrados: _areaCalculada,
-      espacamento: _espacamentoController.text.trim().isNotEmpty ? _espacamentoController.text.trim() : null,
       observacao: _observacaoController.text.trim().isNotEmpty ? _observacaoController.text.trim() : null,
       latitude: _posicaoAtual?.latitude,
       longitude: _posicaoAtual?.longitude,
@@ -146,6 +135,28 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
       comprimento: _formaDaParcela == FormaParcela.retangular ? double.tryParse(_comprimentoController.text.replaceAll(',', '.')) : null,
       raio: _formaDaParcela == FormaParcela.circular ? double.tryParse(_raioController.text.replaceAll(',', '.')) : null,
     );
+  }
+  
+  // <<< MUDANÇA: NOVA FUNÇÃO PARA ABRIR O DIÁLOGO >>>
+  Future<void> _abrirDialogoInfoAdicionais() async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => InformacoesAdicionaisDialog(
+        espacamentoInicial: _parcelaAtual.espacamento,
+        idadeInicial: _parcelaAtual.idadeFloresta,
+        areaTalhaoInicial: _parcelaAtual.areaTalhao,
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        _parcelaAtual = _parcelaAtual.copyWith(
+          espacamento: result['espacamento'],
+          idadeFloresta: result['idade'],
+          areaTalhao: result['areaTalhao'],
+        );
+      });
+    }
   }
 
   Future<void> _salvarEIniciarColeta() async {
@@ -228,7 +239,6 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        // Passamos a versão mais atual da parcela para a próxima tela.
         builder: (context) => InventarioPage(parcela: _parcelaAtual),
       ),
     );
@@ -257,7 +267,6 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
 
   @override
   Widget build(BuildContext context) {
-    // A lógica de decisão usa a nossa variável de estado `_parcelaAtual`.
     final bool isModoNovo = _parcelaAtual.status == StatusParcela.pendente && !_temArvoresColetadas;
 
     return Scaffold(
@@ -287,10 +296,26 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
               _buildCalculadoraArea(),
               const SizedBox(height: 16),
               _buildColetorCoordenadas(),
+              const SizedBox(height: 24),
+              
+              // <<< MUDANÇA: BOTÃO PARA ABRIR O DIÁLOGO >>>
+              SizedBox(
+                height: 50,
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _abrirDialogoInfoAdicionais,
+                  icon: const Icon(Icons.library_books_outlined),
+                  label: const Text('Informações Adicionais do Talhão'),
+                  style: OutlinedButton.styleFrom(
+                     foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
+                     side: BorderSide(color: Colors.grey.shade400),
+                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+
               const SizedBox(height: 16),
-              TextFormField(controller: _espacamentoController, decoration: const InputDecoration(labelText: 'Espaçamento', border: OutlineInputBorder(), prefixIcon: Icon(Icons.space_bar), helperText: 'Opcional')),
-              const SizedBox(height: 16),
-              TextFormField(controller: _observacaoController, decoration: const InputDecoration(labelText: 'Observações', border: OutlineInputBorder(), prefixIcon: Icon(Icons.comment), helperText: 'Opcional'), maxLines: 3),
+              TextFormField(controller: _observacaoController, decoration: const InputDecoration(labelText: 'Observações da Parcela', border: OutlineInputBorder(), prefixIcon: Icon(Icons.comment), helperText: 'Opcional'), maxLines: 3),
               const SizedBox(height: 24),
               _buildActionButtons(isModoNovo),
             ],

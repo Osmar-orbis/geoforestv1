@@ -1,4 +1,4 @@
-// lib/pages/amostra/inventario_page.dart (NOVA ABORDAGEM SIMPLIFICADA)
+// lib/pages/amostra/inventario_page.dart (VERSÃO FINAL E CORRIGIDA)
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
@@ -24,7 +24,6 @@ class _InventarioPageState extends State<InventarioPage> {
   bool _isSaving = false;
   bool _mostrandoApenasDominantes = false;
   bool _listaInvertida = false;
-  // Não precisamos mais dos contadores de linha/posição como estado da classe
 
   @override
   void initState() {
@@ -41,7 +40,7 @@ class _InventarioPageState extends State<InventarioPage> {
     if (mounted) setState(() => _isLoading = false);
   }
 
-  Future<void> _deletarArvore(Arvore arvore) async {
+  Future<void> _deletarArvore(BuildContext context, Arvore arvore) async {
     final bool? confirmar = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -71,46 +70,8 @@ class _InventarioPageState extends State<InventarioPage> {
         ));
     }
   }
-  
-  // =========================================================================
-  // NOVA ABORDAGEM: Função única e recursiva para adicionar árvores
-  // =========================================================================
-  Future<void> _adicionarNovaArvore({Arvore? arvoreParaCorrecao, bool isFusteAdicional = false}) async {
-    // 1. Calcula a próxima linha/posição disponível
-    int proximaLinha = 1;
-    int proximaPosicao = 1;
 
-    if (!isFusteAdicional && _arvoresColetadas.isNotEmpty) {
-      final ultimaArvore = _arvoresColetadas.last;
-      if (ultimaArvore.fimDeLinha) {
-        proximaLinha = ultimaArvore.linha + 1;
-        proximaPosicao = 1;
-      } else {
-        proximaLinha = ultimaArvore.linha;
-        proximaPosicao = ultimaArvore.posicaoNaLinha + 1;
-      }
-    } else if (isFusteAdicional && _arvoresColetadas.isNotEmpty) {
-       final ultimaArvore = _arvoresColetadas.last;
-       proximaLinha = ultimaArvore.linha;
-       proximaPosicao = ultimaArvore.posicaoNaLinha;
-    }
-
-    // Abre o diálogo. Se `arvoreParaCorrecao` não for nula, o diálogo será pré-preenchido.
-    final result = await showDialog<DialogResult>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => ArvoreDialog(
-        arvoreParaEditar: arvoreParaCorrecao,
-        linhaAtual: arvoreParaCorrecao?.linha ?? proximaLinha,
-        posicaoNaLinhaAtual: arvoreParaCorrecao?.posicaoNaLinha ?? proximaPosicao,
-        isAdicionandoFuste: isFusteAdicional,
-      ),
-    );
-
-    // Se o usuário cancelar, sai da função
-    if (result == null) return;
-
-    // Valida o resultado do diálogo
+  Future<void> _processarResultadoDialogo(DialogResult result, {int? indexOriginal}) async {
     final validationResult = _validationService.validateSingleTree(result.arvore);
     if (!validationResult.isValid) {
       final querSalvarMesmoAssim = await showDialog<bool>(
@@ -127,34 +88,78 @@ class _InventarioPageState extends State<InventarioPage> {
           ],
         ),
       );
-      
-      // Se clicar em "Corrigir", chama a função novamente passando a árvore com problema
       if (querSalvarMesmoAssim != true) {
-        // Atraso mínimo para garantir que o diálogo feche antes de abrir o próximo
-        Future.delayed(const Duration(milliseconds: 50), () {
-          _adicionarNovaArvore(arvoreParaCorrecao: result.arvore, isFusteAdicional: isFusteAdicional);
-        });
-        return; // Sai da execução atual
+        if (indexOriginal != null) {
+           _abrirFormularioParaEditar(result.arvore);
+        } else {
+          _adicionarNovaArvore(arvoreInicial: result.arvore);
+        }
+        return;
       }
     }
-    
-    // Se a validação passou ou foi forçada, salva a árvore.
-    if (mounted) {
-      setState(() => _arvoresColetadas.add(result.arvore));
-      await _salvarEstadoAtual(showSnackbar: false);
+
+    setState(() {
+      if (indexOriginal != null) {
+        _arvoresColetadas[indexOriginal] = result.arvore;
+      } else {
+        _arvoresColetadas.add(result.arvore);
+      }
+    });
+
+    await _salvarEstadoAtual(showSnackbar: !(result.atualizarEProximo || result.irParaProxima));
+
+    if (result.irParaProxima) {
+      Future.delayed(const Duration(milliseconds: 50), () => _adicionarNovaArvore());
+    } else if (result.continuarNaMesmaPosicao) {
+      Future.delayed(const Duration(milliseconds: 50), () => _adicionarNovaArvore(isFusteAdicional: true));
+    } else if (result.atualizarEProximo && indexOriginal != null) {
+      _arvoresColetadas.sort((a, b) {
+        int compLinha = a.linha.compareTo(b.linha);
+        if (compLinha != 0) return compLinha;
+        int compPos = a.posicaoNaLinha.compareTo(b.posicaoNaLinha);
+        if (compPos != 0) return compPos;
+        return (a.id ?? 0).compareTo(b.id ?? 0);
+      });
+      final int novoIndex = _arvoresColetadas.indexOf(result.arvore);
+      if (novoIndex + 1 < _arvoresColetadas.length) {
+        Future.delayed(const Duration(milliseconds: 100), () => _abrirFormularioParaEditar(_arvoresColetadas[novoIndex + 1]));
+      }
     }
-    
-    // Verifica se precisa continuar adicionando
-    if (result.continuarNaMesmaPosicao) {
-      // Adicionar outro fuste na mesma posição
-       Future.delayed(const Duration(milliseconds: 50), () {
-          _adicionarNovaArvore(isFusteAdicional: true);
-        });
-    } else if (result.irParaProxima) {
-      // Ir para a próxima árvore
-       Future.delayed(const Duration(milliseconds: 50), () {
-          _adicionarNovaArvore();
-        });
+  }
+
+  Future<void> _adicionarNovaArvore({Arvore? arvoreInicial, bool isFusteAdicional = false}) async {
+    _arvoresColetadas.sort((a, b) {
+      int compLinha = a.linha.compareTo(b.linha);
+      if (compLinha != 0) return compLinha;
+      return a.posicaoNaLinha.compareTo(b.posicaoNaLinha);
+    });
+
+    int proximaLinha = 1;
+    int proximaPosicao = 1;
+
+    if (!isFusteAdicional && _arvoresColetadas.isNotEmpty) {
+      final ultimaArvore = _arvoresColetadas.last;
+      proximaLinha = ultimaArvore.fimDeLinha ? ultimaArvore.linha + 1 : ultimaArvore.linha;
+      proximaPosicao = ultimaArvore.fimDeLinha ? 1 : ultimaArvore.posicaoNaLinha + 1;
+    } else if (isFusteAdicional && _arvoresColetadas.isNotEmpty) {
+      final ultimaArvore = _arvoresColetadas.last;
+      proximaLinha = ultimaArvore.linha;
+      proximaPosicao = ultimaArvore.posicaoNaLinha;
+    }
+
+    final result = await showDialog<DialogResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => ArvoreDialog(
+        arvoreParaEditar: arvoreInicial,
+        linhaAtual: arvoreInicial?.linha ?? proximaLinha,
+        posicaoNaLinhaAtual: arvoreInicial?.posicaoNaLinha ?? proximaPosicao,
+        isAdicionandoFuste: isFusteAdicional,
+      ),
+    );
+
+    if (result != null) {
+      await _processarResultadoDialogo(result);
     }
   }
 
@@ -165,32 +170,18 @@ class _InventarioPageState extends State<InventarioPage> {
     final result = await showDialog<DialogResult>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => ArvoreDialog(arvoreParaEditar: arvore, linhaAtual: arvore.linha, posicaoNaLinhaAtual: arvore.posicaoNaLinha),
+      builder: (context) => ArvoreDialog(
+        arvoreParaEditar: arvore,
+        linhaAtual: arvore.linha,
+        posicaoNaLinhaAtual: arvore.posicaoNaLinha,
+      ),
     );
 
-    if (result == null) return;
-
-    setState(() => _arvoresColetadas[indexOriginal] = result.arvore);
-
-    final showSnackbar = !(result.atualizarEProximo);
-    await _salvarEstadoAtual(showSnackbar: showSnackbar);
-
-    if (result.atualizarEProximo) {
-      final int proximoIndex = indexOriginal + 1;
-      if (proximoIndex < _arvoresColetadas.length) {
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (mounted) {
-            _abrirFormularioParaEditar(_arvoresColetadas[proximoIndex]);
-          }
-        });
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Fim da lista!'), backgroundColor: Colors.blue),
-        );
-      }
+    if (result != null) {
+      await _processarResultadoDialogo(result, indexOriginal: indexOriginal);
     }
   }
-
+  
   Future<void> _salvarEstadoAtual({bool showSnackbar = true, bool concluir = false}) async {
     if (_isSaving) return;
     if (mounted) setState(() => _isSaving = true);
@@ -222,7 +213,7 @@ class _InventarioPageState extends State<InventarioPage> {
       arvore.dominante = false;
     }
     final int numeroDeDominantes = (widget.parcela.areaMetrosQuadrados / 100).floor();
-    final arvoresCandidatas = _arvoresColetadas.where((a) => a.status == StatusArvore.normal).toList();
+    final arvoresCandidatas = _arvoresColetadas.where((a) => a.codigo == Codigo.normal).toList();
     if (arvoresCandidatas.length <= numeroDeDominantes) {
       for (var arvore in arvoresCandidatas) {
         arvore.dominante = true;
@@ -253,22 +244,72 @@ class _InventarioPageState extends State<InventarioPage> {
     final validationResult = _validationService.validateParcela(_arvoresColetadas);
     await showDialog(context: context, builder: (ctx) => AlertDialog(title: const Text("Relatório de Análise Estatística"), content: validationResult.isValid ? const Text("Nenhuma anomalia estatística significativa foi encontrada nos dados de CAP.") : SingleChildScrollView(child: Text(validationResult.warnings.join('\n\n'))), actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text("OK"))]));
   }
+  
+  Widget _buildSummaryCard() {
+    final int totalArvores = _arvoresColetadas.length;
+    final int contagemAlturaNormal = _arvoresColetadas.where((a) => a.codigo == Codigo.normal && a.altura != null && a.altura! > 0).length;
+    final int contagemAlturaDominante = _arvoresColetadas.where((a) => a.dominante && a.altura != null && a.altura! > 0).length;
 
-  String _getArvoreSubtitle(Arvore arvore) {
-    String statusPrincipal = arvore.status.name[0].toUpperCase() + arvore.status.name.substring(1);
-    String statusSecundario = arvore.status2 != null ? ' / ${arvore.status2!.name[0].toUpperCase() + arvore.status2!.name.substring(1)}' : '';
-    String altura = arvore.altura != null ? ' | Altura: ${arvore.altura!.toStringAsFixed(1)}m' : '';
-    return '$statusPrincipal$statusSecundario$altura';
+    return Card(
+      margin: const EdgeInsets.all(8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Talhão: ${widget.parcela.nomeTalhao} / Parcela: ${widget.parcela.idParcela}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Divider(height: 20),
+            _buildStatRow('Árvores Coletadas:', '$totalArvores'),
+            _buildStatRow('Alturas Medidas (Normais):', '$contagemAlturaNormal'),
+            _buildStatRow('Alturas Medidas (Dominantes):', '$contagemAlturaDominante'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderRow() {
+    final theme = Theme.of(context);
+    final headerStyle = theme.textTheme.labelMedium?.copyWith(
+      fontWeight: FontWeight.bold,
+      color: theme.colorScheme.onSurface.withOpacity(0.6),
+      letterSpacing: 0.5,
+    );
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+        border: Border(bottom: BorderSide(color: theme.dividerColor, width: 1.5)),
+      ),
+      child: Row(
+        children: [
+          _HeaderCell('LINHA', flex: 15, style: headerStyle),
+          _HeaderCell('ÁRVORE', flex: 15, style: headerStyle),
+          _HeaderCell('CAP', flex: 20, style: headerStyle),
+          _HeaderCell('ALTURA', flex: 20, style: headerStyle),
+          _HeaderCell('CÓDIGOS', flex: 30, style: headerStyle),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final listaFiltrada = _mostrandoApenasDominantes ? _arvoresColetadas.where((a) => a.dominante).toList() : _arvoresColetadas;
-    final listaExibida = _listaInvertida ? listaFiltrada.reversed.toList() : listaFiltrada;
+    
+    final listaOrdenada = List<Arvore>.from(listaFiltrada);
+    listaOrdenada.sort((a, b) {
+      int compLinha = a.linha.compareTo(b.linha);
+      if (compLinha != 0) return compLinha;
+      int compPos = a.posicaoNaLinha.compareTo(b.posicaoNaLinha);
+      if (compPos != 0) return compPos;
+      return (a.id ?? 0).compareTo(b.id ?? 0);
+    });
 
-    final int totalArvores = _arvoresColetadas.length;
-    final int contagemAlturaNormal = _arvoresColetadas.where((a) => a.status == StatusArvore.normal && a.altura != null && a.altura! > 0).length;
-    final int contagemAlturaDominante = _arvoresColetadas.where((a) => a.dominante && a.altura != null && a.altura! > 0).length;
+    final listaExibida = _listaInvertida ? listaOrdenada.reversed.toList() : listaOrdenada;
 
     return Scaffold(
       appBar: AppBar(
@@ -288,43 +329,32 @@ class _InventarioPageState extends State<InventarioPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                Card(
-                  margin: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Talhão: ${widget.parcela.nomeTalhao} / Parcela: ${widget.parcela.idParcela}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        const Divider(height: 16),
-                        _buildStatRow('Árvores Coletadas:', '$totalArvores'),
-                        _buildStatRow('Alturas Medidas (Normais):', '$contagemAlturaNormal'),
-                        _buildStatRow('Alturas Medidas (Dominantes):', '$contagemAlturaDominante'),
-                      ],
-                    ),
-                  ),
-                ),
+                _buildSummaryCard(),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 0),
+                  padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 8.0),
                   child: SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: () {if (!_mostrandoApenasDominantes) _identificarArvoresDominantes(); setState(() => _mostrandoApenasDominantes = !_mostrandoApenasDominantes);}, icon: Icon(_mostrandoApenasDominantes ? Icons.filter_list_off : Icons.filter_list), label: Text(_mostrandoApenasDominantes ? 'Mostrar Todas' : 'Encontrar Dominantes'))),
                 ),
-                const Divider(height: 16),
+                
+                _buildHeaderRow(),
+
                 Expanded(
                   child: _arvoresColetadas.isEmpty
                       ? const Center(child: Text('Clique no botão "+" para adicionar a primeira árvore.', style: TextStyle(color: Colors.grey, fontSize: 16)))
                       : SlidableAutoCloseBehavior(
                         child: ListView.builder(
+                            padding: EdgeInsets.zero,
                             itemCount: listaExibida.length,
                             itemBuilder: (context, index) {
                               final arvore = listaExibida[index];
+                              
                               return Slidable(
                                 key: ValueKey(arvore.id ?? arvore.hashCode),
                                 endActionPane: ActionPane(
                                   motion: const StretchMotion(),
+                                  extentRatio: 0.25,
                                   children: [
                                     SlidableAction(
-                                      onPressed: (_) => _deletarArvore(arvore),
+                                      onPressed: (ctx) => _deletarArvore(ctx, arvore),
                                       backgroundColor: Colors.redAccent,
                                       foregroundColor: Colors.white,
                                       icon: Icons.delete_outline,
@@ -332,15 +362,27 @@ class _InventarioPageState extends State<InventarioPage> {
                                     ),
                                   ],
                                 ),
-                                child: Card(
-                                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  color: arvore.dominante ? Colors.green.withAlpha(51) : null,
-                                  child: ListTile(
-                                    leading: CircleAvatar(backgroundColor: arvore.dominante ? Colors.amber[700] : Theme.of(context).primaryColor, child: arvore.dominante ? const Icon(Icons.star, color: Colors.white, size: 20) : Text('${arvore.posicaoNaLinha}', style: const TextStyle(color: Colors.white))),
-                                    title: Text('L: ${arvore.linha} | CAP: ${arvore.cap.toStringAsFixed(1)} cm'),
-                                    subtitle: Text(_getArvoreSubtitle(arvore)),
-                                    trailing: const Icon(Icons.edit_outlined, color: Colors.grey),
-                                    onTap: () => _abrirFormularioParaEditar(arvore),
+                                child: InkWell(
+                                  onTap: () => _abrirFormularioParaEditar(arvore),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+                                    decoration: BoxDecoration(
+                                      color: arvore.dominante ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4) : (index.isOdd ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : Colors.transparent),
+                                      border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor, width: 0.8)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _DataCell(arvore.linha.toString(), flex: 15),
+                                        _DataCell(arvore.posicaoNaLinha.toString(), flex: 15),
+                                        _DataCell(arvore.cap > 0 ? arvore.cap.toStringAsFixed(1) : '-', flex: 20),
+                                        _DataCell(arvore.altura?.toStringAsFixed(1) ?? '-', flex: 20),
+                                        _DataCell(
+                                          '${arvore.codigo.name[0].toUpperCase()}${arvore.codigo2 != null ? ", ${arvore.codigo2!.name[0].toUpperCase()}" : ""}', 
+                                          flex: 30, 
+                                          isBold: true
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               );
@@ -350,10 +392,10 @@ class _InventarioPageState extends State<InventarioPage> {
                 ),
               ],
             ),
-      // O FloatingActionButton agora chama a nova função simplificada
       floatingActionButton: FloatingActionButton(
         onPressed: () => _adicionarNovaArvore(),
         tooltip: 'Adicionar Árvore',
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: const Icon(Icons.add),
       ),
     );
@@ -368,6 +410,43 @@ class _InventarioPageState extends State<InventarioPage> {
           Text(label, style: TextStyle(color: Colors.grey[700])),
           Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
+      ),
+    );
+  }
+}
+
+class _HeaderCell extends StatelessWidget {
+  final String text;
+  final int flex;
+  final TextStyle? style;
+  const _HeaderCell(this.text, {required this.flex, this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      flex: flex,
+      child: Text(text, style: style, textAlign: TextAlign.center),
+    );
+  }
+}
+
+class _DataCell extends StatelessWidget {
+  final String text;
+  final int flex;
+  final bool isBold;
+  const _DataCell(this.text, {required this.flex, this.isBold = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      flex: flex,
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+        ),
       ),
     );
   }

@@ -51,7 +51,8 @@ dependencies:
   connectivity_plus: ^6.1.4
   flutter_map_line_editor: ^6.0.0
   flutter_map_dragmarker: ^6.0.0
-  fl_chart: ^1.0.0
+  fl_chart: ^0.68.0 # CORRIGIDO AQUI
+  
   
 dev_dependencies:
   flutter_test:
