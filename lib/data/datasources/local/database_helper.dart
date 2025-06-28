@@ -45,7 +45,7 @@ class DatabaseHelper {
     });
     return await openDatabase(
       join(await getDatabasesPath(), 'geoforestcoletor.db'),
-      version: 13, // Mantido em 13, já que não estamos mudando a estrutura do banco.
+      version: 14, 
       onConfigure: _onConfigure,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -103,6 +103,18 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT, cubagemArvoreId INTEGER NOT NULL, alturaMedicao REAL NOT NULL, circunferencia REAL, casca1_mm REAL, casca2_mm REAL, FOREIGN KEY (cubagemArvoreId) REFERENCES cubagens_arvores (id) ON DELETE CASCADE
       )
     ''');
+    await db.execute('''
+      CREATE TABLE talhoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        idFazenda TEXT,
+        nomeFazenda TEXT NOT NULL,
+        nomeTalhao TEXT NOT NULL,
+        areaHa REAL,
+        idadeAnos REAL,
+        UNIQUE(nomeFazenda, nomeTalhao)
+      )
+    ''');
+
     await db.execute('CREATE INDEX idx_arvores_parcelaId ON arvores(parcelaId)');
     await db.execute('CREATE INDEX idx_cubagens_secoes_cubagemArvoreId ON cubagens_secoes(cubagemArvoreId)');
   }
@@ -140,6 +152,24 @@ class DatabaseHelper {
         debugPrint('Coluna "isSynced" adicionada à tabela "parcelas" com sucesso.');
       } catch (e) {
         debugPrint('Erro ao adicionar coluna isSynced (pode já existir): $e');
+      }
+    }
+    if (oldVersion < 14) {
+      try {
+        await db.execute('''
+          CREATE TABLE talhoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            idFazenda TEXT,
+            nomeFazenda TEXT NOT NULL,
+            nomeTalhao TEXT NOT NULL,
+            areaHa REAL,
+            idadeAnos REAL,
+            UNIQUE(nomeFazenda, nomeTalhao)
+          )
+        ''');
+        debugPrint('Tabela "talhoes" criada com sucesso na migração.');
+      } catch (e) {
+        debugPrint('Erro ao criar a tabela "talhoes" (pode já existir): $e');
       }
     }
   }
@@ -271,19 +301,26 @@ class DatabaseHelper {
   }
 
   // ==========================================================
-  // >>>>> NOVOS MÉTODOS PARA ANÁLISE DE DADOS <<<<<
+  // >>>>> MÉTODOS PARA ANÁLISE DE DADOS <<<<<
   // ==========================================================
 
-  /// Retorna um mapa com todas as fazendas e seus respectivos talhões que possuem coletas.
+  /// Retorna um mapa com todas as fazendas e seus respectivos talhões que possuem
+  /// pelo menos uma parcela com status "Concluída".
   Future<Map<String, List<String>>> getProjetosDisponiveis() async {
     final db = await database;
-    final List<Map<String, dynamic>> result = await db.rawQuery(
-      'SELECT DISTINCT nomeFazenda, nomeTalhao FROM parcelas ORDER BY nomeFazenda, nomeTalhao'
+    final List<Map<String, dynamic>> maps = await db.query(
+      'parcelas',
+      columns: ['nomeFazenda', 'nomeTalhao'],
+      where: 'status = ?',
+      whereArgs: [StatusParcela.concluida.name], 
+      distinct: true, 
+      orderBy: 'nomeFazenda, nomeTalhao',
     );
+
     final Map<String, List<String>> projetos = {};
-    for (var row in result) {
-      final String nomeFazenda = row['nomeFazenda'];
-      final String nomeTalhao = row['nomeTalhao'];
+    for (final map in maps) {
+      final nomeFazenda = map['nomeFazenda'] as String;
+      final nomeTalhao = map['nomeTalhao'] as String;
       if (!projetos.containsKey(nomeFazenda)) {
         projetos[nomeFazenda] = [];
       }
@@ -315,6 +352,27 @@ class DatabaseHelper {
     }
     
     return parcelas;
+  }
+
+  // <<< NOVO MÉTODO ADICIONADO AQUI
+  /// Retorna a lista de parcelas concluídas e a lista agregada de todas as suas árvores
+  /// para um determinado projeto (fazenda/talhão).
+  Future<Map<String, dynamic>> getDadosAgregadosDoTalhao(String nomeFazenda, String nomeTalhao) async {
+    final List<Parcela> parcelas = await getParcelasByProject(nomeFazenda, nomeTalhao);
+    final List<Parcela> parcelasConcluidas = parcelas.where((p) => p.status == StatusParcela.concluida).toList();
+
+    final List<Arvore> todasAsArvores = [];
+    for (final parcela in parcelasConcluidas) {
+      if (parcela.dbId != null) {
+        final arvoresDaParcela = await getArvoresDaParcela(parcela.dbId!);
+        todasAsArvores.addAll(arvoresDaParcela);
+      }
+    }
+
+    return {
+      'parcelas': parcelasConcluidas,
+      'arvores': todasAsArvores,
+    };
   }
 
   // ==========================================================

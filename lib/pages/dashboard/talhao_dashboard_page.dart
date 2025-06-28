@@ -1,9 +1,10 @@
-// lib/pages/dashboard/talhao_dashboard_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
+import 'package:geoforestcoletor/models/arvore_model.dart';
 import 'package:geoforestcoletor/models/parcela_model.dart';
 import 'package:geoforestcoletor/services/analysis_service.dart';
+import 'package:geoforestcoletor/services/pdf_service.dart';
+import 'package:geoforestcoletor/widgets/grafico_distribuicao_widget.dart';
 
 class TalhaoDashboardPage extends StatefulWidget {
   final String nomeFazenda;
@@ -22,33 +23,172 @@ class TalhaoDashboardPage extends StatefulWidget {
 class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
   final _dbHelper = DatabaseHelper.instance;
   final _analysisService = AnalysisService();
+  final _pdfService = PdfService();
 
-  late Future<TalhaoAnalysisResult> _analysisResultFuture;
+  List<Parcela> _parcelasDoTalhao = [];
+  List<Arvore> _arvoresDoTalhao = [];
+  late Future<void> _dataLoadingFuture;
+  TalhaoAnalysisResult? _analysisResult;
 
   @override
   void initState() {
     super.initState();
-    _analysisResultFuture = _analisarTalhao();
+    _dataLoadingFuture = _carregarEAnalisarTalhao();
   }
 
-  Future<TalhaoAnalysisResult> _analisarTalhao() async {
-    // Carrega todas as parcelas e suas árvores para o talhão selecionado
-    final List<Parcela> parcelas = await _dbHelper.getParcelasComArvores(
+  Future<void> _carregarEAnalisarTalhao() async {
+    final dadosAgregados = await _dbHelper.getDadosAgregadosDoTalhao(
       widget.nomeFazenda,
       widget.nomeTalhao,
     );
-    // Roda o serviço de análise
-    return _analysisService.getTalhaoInsights(parcelas);
+    _parcelasDoTalhao = dadosAgregados['parcelas'] as List<Parcela>;
+    _arvoresDoTalhao = dadosAgregados['arvores'] as List<Arvore>;
+
+    if (_parcelasDoTalhao.isEmpty || _arvoresDoTalhao.isEmpty) return;
+
+    final resultado = _analysisService.getTalhaoInsights(_parcelasDoTalhao, _arvoresDoTalhao);
+    if (mounted) {
+      setState(() => _analysisResult = resultado);
+    }
+  }
+
+  void _simularDesbaste() {
+    final resultadoSimulacao = _analysisService.simularDesbaste(_parcelasDoTalhao, _arvoresDoTalhao, 20.0);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Resultado da Simulação (20% de Desbaste)'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildStatRow('Árvores/ha (Após):', resultadoSimulacao.arvoresPorHectare.toString()),
+              _buildStatRow('CAP Médio (Após):', '${resultadoSimulacao.mediaCap.toStringAsFixed(1)} cm'),
+              _buildStatRow('Área Basal (Após):', '${resultadoSimulacao.areaBasalPorHectare.toStringAsFixed(2)} m²/ha'),
+              _buildStatRow('Volume (Após):', '${resultadoSimulacao.volumePorHectare.toStringAsFixed(2)} m³/ha'),
+            ],
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Fechar'))],
+      ),
+    );
+  }
+
+  void _analisarRendimento() {
+    final resultadoRendimento = _analysisService.analisarRendimentoPorHectare(_parcelasDoTalhao, _arvoresDoTalhao);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Análise de Rendimento Comercial'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: resultadoRendimento.volumePorHectare.entries.map((entry) {
+              return _buildStatRow('${entry.key.descricao}:', '${entry.value.toStringAsFixed(2)} m³/ha');
+            }).toList(),
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Fechar'))],
+      ),
+    );
+  }
+
+  // =========================================================================
+  // FUNÇÃO ATUALIZADA COM DIÁLOGO MELHORADO
+  // =========================================================================
+  void _gerarPlanoDeCubagemPdf() async {
+    // Garante que temos os resultados da análise antes de prosseguir
+    if (_analysisResult == null || _analysisResult!.totalArvoresAmostradas == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Dados de análise insuficientes para gerar o plano.")),
+      );
+      return;
+    }
+
+    final String? totalParaCubarStr = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController();
+        final List<int> valoresSugeridos = [10, 20, 30, 50, 100];
+        final totalAmostradas = _analysisResult!.totalArvoresAmostradas;
+
+        return AlertDialog(
+          title: const Text('Definir Plano de Cubagem'),
+          content: SingleChildScrollView( // Para evitar overflow em telas pequenas
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Total de árvores medidas: $totalAmostradas',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 16),
+                const Text('Sugestões:'),
+                Wrap( // Usa Wrap para os botões se ajustarem ao espaço
+                  spacing: 8.0,
+                  children: valoresSugeridos
+                    // Mostra apenas sugestões menores que o total de árvores
+                    .where((valor) => valor < totalAmostradas)
+                    .map((valor) => OutlinedButton(
+                          child: Text(valor.toString()),
+                          onPressed: () {
+                            controller.text = valor.toString();
+                          },
+                        )).toList(),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Nº de árvores para cubar',
+                    hintText: 'Ou digite um valor',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(controller.text),
+              child: const Text('Gerar PDF'),
+            ),
+          ],
+        );
+      },
+    );
+
+    final int? totalParaCubar = int.tryParse(totalParaCubarStr ?? '');
+    if (totalParaCubar == null || totalParaCubar <= 0) {
+      // O usuário cancelou ou não inseriu um valor válido.
+      return;
+    }
+
+    final plano = _analysisService.gerarPlanoDeCubagem(
+      _analysisResult!.distribuicaoDiametrica,
+      _analysisResult!.totalArvoresAmostradas,
+      totalParaCubar,
+    );
+
+    await _pdfService.gerarPlanoCubagemPdf(
+      context: context,
+      nomeFazenda: widget.nomeFazenda,
+      nomeTalhao: widget.nomeTalhao,
+      planoDeCubagem: plano,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Análise: ${widget.nomeTalhao}'),
-      ),
-      body: FutureBuilder<TalhaoAnalysisResult>(
-        future: _analysisResultFuture,
+      appBar: AppBar(title: Text('Análise: ${widget.nomeTalhao}')),
+      body: FutureBuilder<void>(
+        future: _dataLoadingFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -56,11 +196,11 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
           if (snapshot.hasError) {
             return Center(child: Text('Erro ao analisar talhão: ${snapshot.error}'));
           }
-          if (!snapshot.hasData || snapshot.data!.totalArvoresAmostradas == 0) {
-            return const Center(child: Text('Não há dados suficientes para a análise.'));
+          if (_analysisResult == null || _analysisResult!.totalArvoresAmostradas == 0) {
+            return const Center(child: Text('Não há dados de parcelas concluídas para a análise.'));
           }
 
-          final result = snapshot.data!;
+          final result = _analysisResult!;
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(12.0),
@@ -69,6 +209,21 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
               children: [
                 _buildResumoCard(result),
                 const SizedBox(height: 16),
+                Card(
+                  elevation: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Distribuição Diamétrica (CAP)', style: Theme.of(context).textTheme.titleLarge),
+                        const SizedBox(height: 24),
+                        GraficoDistribuicaoWidget(dadosDistribuicao: result.distribuicaoDiametrica),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 _buildInsightsCard("⚠️ Alertas", result.warnings, Colors.red.shade100),
                 const SizedBox(height: 12),
                 _buildInsightsCard("💡 Insights", result.insights, Colors.blue.shade100),
@@ -76,21 +231,28 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
                 _buildInsightsCard("🛠️ Recomendações", result.recommendations, Colors.orange.shade100),
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
-                  onPressed: () {
-                    // TODO: Navegar para a página de simulação de desbaste
-                  },
+                  onPressed: _simularDesbaste,
                   icon: const Icon(Icons.content_cut_outlined),
                   label: const Text('Simular Desbaste'),
                   style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
                 ),
                 const SizedBox(height: 8),
                 ElevatedButton.icon(
-                  onPressed: () {
-                    // TODO: Navegar para a página de análise de rendimento
-                  },
+                  onPressed: _analisarRendimento,
                   icon: const Icon(Icons.bar_chart_outlined),
                   label: const Text('Analisar Rendimento Comercial'),
                   style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+                ),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  onPressed: _gerarPlanoDeCubagemPdf,
+                  icon: const Icon(Icons.picture_as_pdf_outlined, color: Colors.white),
+                  label: const Text('Gerar Plano de Cubagem (PDF)'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
                 ),
               ],
             ),
@@ -115,15 +277,17 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
             _buildStatRow('Altura Média:', '${result.mediaAltura.toStringAsFixed(1)} m'),
             _buildStatRow('Área Basal (G):', '${result.areaBasalPorHectare.toStringAsFixed(2)} m²/ha'),
             _buildStatRow('Volume Estimado:', '${result.volumePorHectare.toStringAsFixed(2)} m³/ha'),
+            const Divider(height: 20, thickness: 0.5, indent: 20, endIndent: 20),
+            _buildStatRow('Nº de Parcelas Amostradas:', result.totalParcelasAmostradas.toString()),
+            _buildStatRow('Nº de Árvores Medidas:', result.totalArvoresAmostradas.toString()),
           ],
         ),
       ),
     );
   }
-  
+
   Widget _buildInsightsCard(String title, List<String> items, Color color) {
     if (items.isEmpty) return const SizedBox.shrink();
-
     return Card(
       color: color,
       elevation: 0,
@@ -134,10 +298,7 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
           children: [
             Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            ...items.map((item) => Padding(
-              padding: const EdgeInsets.only(bottom: 4.0),
-              child: Text('- $item'),
-            )),
+            ...items.map((item) => Padding(padding: const EdgeInsets.only(bottom: 4.0), child: Text('- $item'))),
           ],
         ),
       ),

@@ -41,6 +41,8 @@ dependencies:
   share_plus: ^8.0.2
   csv: ^6.0.0
   shapefile: ^1.0.1
+  pdf: ^3.10.8 # ou a versão mais recente
+  open_file: ^3.3.2 # para abrir o PDF gerado automaticamente
 
   # Widgets de UI
   flutter_slidable: ^3.1.0
