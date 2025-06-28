@@ -1,3 +1,5 @@
+// lib/pages/dashboard/talhao_dashboard_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
 import 'package:geoforestcoletor/models/arvore_model.dart';
@@ -5,6 +7,7 @@ import 'package:geoforestcoletor/models/parcela_model.dart';
 import 'package:geoforestcoletor/services/analysis_service.dart';
 import 'package:geoforestcoletor/services/pdf_service.dart';
 import 'package:geoforestcoletor/widgets/grafico_distribuicao_widget.dart';
+import 'package:geoforestcoletor/pages/analises/simulacao_desbaste_page.dart';
 
 class TalhaoDashboardPage extends StatefulWidget {
   final String nomeFazenda;
@@ -52,25 +55,16 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
     }
   }
 
-  void _simularDesbaste() {
-    final resultadoSimulacao = _analysisService.simularDesbaste(_parcelasDoTalhao, _arvoresDoTalhao, 20.0);
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Resultado da Simulação (20% de Desbaste)'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildStatRow('Árvores/ha (Após):', resultadoSimulacao.arvoresPorHectare.toString()),
-              _buildStatRow('CAP Médio (Após):', '${resultadoSimulacao.mediaCap.toStringAsFixed(1)} cm'),
-              _buildStatRow('Área Basal (Após):', '${resultadoSimulacao.areaBasalPorHectare.toStringAsFixed(2)} m²/ha'),
-              _buildStatRow('Volume (Após):', '${resultadoSimulacao.volumePorHectare.toStringAsFixed(2)} m³/ha'),
-            ],
-          ),
+  void _navegarParaSimulacao() {
+    if (_analysisResult == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SimulacaoDesbastePage(
+          parcelas: _parcelasDoTalhao,
+          arvores: _arvoresDoTalhao,
+          analiseInicial: _analysisResult!,
         ),
-        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Fechar'))],
       ),
     );
   }
@@ -94,11 +88,7 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
     );
   }
 
-  // =========================================================================
-  // FUNÇÃO ATUALIZADA COM DIÁLOGO MELHORADO
-  // =========================================================================
   void _gerarPlanoDeCubagemPdf() async {
-    // Garante que temos os resultados da análise antes de prosseguir
     if (_analysisResult == null || _analysisResult!.totalArvoresAmostradas == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Dados de análise insuficientes para gerar o plano.")),
@@ -115,7 +105,7 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
 
         return AlertDialog(
           title: const Text('Definir Plano de Cubagem'),
-          content: SingleChildScrollView( // Para evitar overflow em telas pequenas
+          content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,17 +116,17 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
                 ),
                 const SizedBox(height: 16),
                 const Text('Sugestões:'),
-                Wrap( // Usa Wrap para os botões se ajustarem ao espaço
+                Wrap(
                   spacing: 8.0,
                   children: valoresSugeridos
-                    // Mostra apenas sugestões menores que o total de árvores
-                    .where((valor) => valor < totalAmostradas)
-                    .map((valor) => OutlinedButton(
-                          child: Text(valor.toString()),
-                          onPressed: () {
-                            controller.text = valor.toString();
-                          },
-                        )).toList(),
+                      .where((valor) => valor < totalAmostradas)
+                      .map((valor) => OutlinedButton(
+                            child: Text(valor.toString()),
+                            onPressed: () {
+                              controller.text = valor.toString();
+                            },
+                          ))
+                      .toList(),
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -164,10 +154,7 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
     );
 
     final int? totalParaCubar = int.tryParse(totalParaCubarStr ?? '');
-    if (totalParaCubar == null || totalParaCubar <= 0) {
-      // O usuário cancelou ou não inseriu um valor válido.
-      return;
-    }
+    if (totalParaCubar == null || totalParaCubar <= 0) return;
 
     final plano = _analysisService.gerarPlanoDeCubagem(
       _analysisResult!.distribuicaoDiametrica,
@@ -231,7 +218,7 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
                 _buildInsightsCard("🛠️ Recomendações", result.recommendations, Colors.orange.shade100),
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
-                  onPressed: _simularDesbaste,
+                  onPressed: _navegarParaSimulacao,
                   icon: const Icon(Icons.content_cut_outlined),
                   label: const Text('Simular Desbaste'),
                   style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),

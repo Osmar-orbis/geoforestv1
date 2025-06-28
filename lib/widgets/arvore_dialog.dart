@@ -1,4 +1,4 @@
-// lib/widgets/arvore_dialog.dart (VERSÃO SEM VOLUME)
+// lib/widgets/arvore_dialog.dart (COM LINHA E POSIÇÃO EDITÁVEIS)
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/models/arvore_model.dart';
@@ -43,6 +43,9 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
   final _formKey = GlobalKey<FormState>();
   final _capController = TextEditingController();
   final _alturaController = TextEditingController();
+  // 1. ADICIONE CONTROLLERS PARA LINHA E POSIÇÃO
+  final _linhaController = TextEditingController();
+  final _posicaoController = TextEditingController();
 
   late StatusArvore _status;
   StatusArvore2? _status2;
@@ -54,13 +57,20 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
     super.initState();
     if (widget.isEditing) {
       final arvore = widget.arvoreParaEditar!;
-      _capController.text = arvore.cap.toString();
-      _alturaController.text = arvore.altura?.toString() ?? '';
+      _capController.text = arvore.cap.toString().replaceAll('.', ',');
+      _alturaController.text = arvore.altura?.toString().replaceAll('.', ',') ?? '';
       _status = arvore.status;
       _status2 = arvore.status2;
       _fimDeLinha = arvore.fimDeLinha;
+      // 2. PREENCHA OS NOVOS CONTROLLERS COM OS DADOS DA ÁRVORE SENDO EDITADA
+      _linhaController.text = arvore.linha.toString();
+      _posicaoController.text = arvore.posicaoNaLinha.toString();
+      
     } else {
       _status = StatusArvore.normal;
+      // No modo de adição, preenchemos com os valores automáticos
+      _linhaController.text = widget.linhaAtual.toString();
+      _posicaoController.text = widget.posicaoNaLinhaAtual.toString();
     }
     _atualizarEstadoCampos();
   }
@@ -84,6 +94,9 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
   void dispose() {
     _capController.dispose();
     _alturaController.dispose();
+    // 3. FAÇA O DISPOSE DOS NOVOS CONTROLLERS
+    _linhaController.dispose();
+    _posicaoController.dispose();
     super.dispose();
   }
 
@@ -91,13 +104,17 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
     if (_formKey.currentState!.validate()) {
       final double cap = double.tryParse(_capController.text.replaceAll(',', '.')) ?? 0.0;
       final double? altura = _alturaController.text.isNotEmpty ? double.tryParse(_alturaController.text.replaceAll(',', '.')) : null;
+      // 4. PEGUE OS VALORES DOS NOVOS CONTROLLERS
+      final int linha = int.tryParse(_linhaController.text) ?? widget.linhaAtual;
+      final int posicao = int.tryParse(_posicaoController.text) ?? widget.posicaoNaLinhaAtual;
 
       final arvore = Arvore(
         id: widget.arvoreParaEditar?.id,
         cap: cap,
         altura: altura,
-        linha: widget.linhaAtual,
-        posicaoNaLinha: widget.posicaoNaLinhaAtual,
+        // 5. USE OS NOVOS VALORES DE LINHA E POSIÇÃO AO CRIAR O OBJETO
+        linha: linha,
+        posicaoNaLinha: posicao,
         status: _status,
         status2: _status2,
         fimDeLinha: _fimDeLinha,
@@ -120,7 +137,7 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
 
     return AlertDialog(
       title: Text(widget.isEditing
-          ? 'Editar Árvore L${widget.linhaAtual}/P${widget.posicaoNaLinhaAtual}'
+          ? 'Editar Árvore' // Título simplificado para edição
           : widget.isAdicionandoFuste
               ? 'Adicionar Fuste L${widget.linhaAtual}/P${widget.posicaoNaLinhaAtual}'
               : 'Adicionar Árvore L${widget.linhaAtual}/P${widget.posicaoNaLinhaAtual}'),
@@ -130,6 +147,36 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // =======================================================
+              // 6. ADICIONE OS CAMPOS DE TEXTO PARA LINHA E POSIÇÃO
+              //    ELES SERÃO HABILITADOS APENAS NO MODO DE EDIÇÃO
+              // =======================================================
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _linhaController,
+                        enabled: widget.isEditing, // HABILITADO APENAS PARA EDIÇÃO
+                        decoration: const InputDecoration(labelText: 'Linha'),
+                        keyboardType: TextInputType.number,
+                        validator: (v) => (v == null || v.isEmpty || int.tryParse(v) == null) ? 'Inválido' : null,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _posicaoController,
+                        enabled: widget.isEditing, // HABILITADO APENAS PARA EDIÇÃO
+                        decoration: const InputDecoration(labelText: 'Posição'),
+                        keyboardType: TextInputType.number,
+                        validator: (v) => (v == null || v.isEmpty || int.tryParse(v) == null) ? 'Inválido' : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               DropdownButtonFormField<StatusArvore>(
                 value: _status,
                 decoration: const InputDecoration(labelText: 'Status Principal'),
@@ -163,7 +210,7 @@ class _ArvoreDialogState extends State<ArvoreDialog> {
                   if (_camposHabilitados && (value == null || value.isEmpty)) {
                     return 'Campo obrigatório';
                   }
-                  if (double.tryParse(value!.replaceAll(',', '.')) == null) {
+                  if (value != null && value.isNotEmpty && double.tryParse(value.replaceAll(',', '.')) == null) {
                     return 'Número inválido';
                   }
                   return null;
