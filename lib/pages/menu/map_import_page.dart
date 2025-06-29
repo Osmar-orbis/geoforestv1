@@ -1,10 +1,11 @@
-// lib/pages/menu/map_import_page.dart (Versão com UI Limpa)
+// lib/pages/menu/map_import_page.dart (VERSÃO FINAL E CORRIGIDA)
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
 import 'package:geoforestcoletor/models/sample_point.dart';
+import 'package:geoforestcoletor/models/talhao_model.dart';
 import 'package:geoforestcoletor/pages/amostra/coleta_dados_page.dart';
 import 'package:geoforestcoletor/providers/map_provider.dart';
 import 'package:geoforestcoletor/services/export_service.dart';
@@ -13,7 +14,9 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 class MapImportPage extends StatefulWidget {
-  const MapImportPage({super.key});
+  // A página agora depende de um Talhao para funcionar.
+  final Talhao talhao;
+  const MapImportPage({super.key, required this.talhao});
 
   @override
   State<MapImportPage> createState() => _MapImportPageState();
@@ -28,15 +31,15 @@ class _MapImportPageState extends State<MapImportPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final provider = context.read<MapProvider>();
-      await provider.loadLastProject();
+      await provider.loadSamplesFromTalhao(widget.talhao);
       if (!mounted) return;
+      // Centraliza o mapa nos polígonos, se existirem
       if (provider.polygons.isNotEmpty) {
         _mapController.fitCamera(CameraFit.bounds(bounds: LatLngBounds.fromPoints(provider.polygons.expand((p) => p.points).toList()), padding: const EdgeInsets.all(50.0)));
       }
     });
   }
 
-  // --- MÉTODOS DE LÓGICA (INTACTOS) ---
   Color _getMarkerColor(SampleStatus status) {
     switch (status) { case SampleStatus.open: return Colors.orange.shade300; case SampleStatus.completed: return Colors.green; case SampleStatus.exported: return Colors.blue; case SampleStatus.untouched: return Colors.white; }
   }
@@ -47,17 +50,12 @@ class _MapImportPageState extends State<MapImportPage> {
 
   Future<void> _handleImport() async {
     final provider = context.read<MapProvider>();
-    final bool success = await provider.importAndClear();
+    final bool success = await provider.importAndClear(widget.talhao);
     if (!mounted) return;
 
     if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arquivo lido com sucesso!')));
-      if (provider.samplePoints.isNotEmpty && provider.polygons.isEmpty) {
-        final projectData = await _showDataInputDialog(isImport: true);
-        if (projectData != null) {
-          await provider.saveImportedProject(farmName: projectData['farmName'], blockName: projectData['blockName'], idFazenda: projectData['farmId']);
-        }
-      }
+      await provider.saveImportedProject(widget.talhao);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arquivo lido e parcelas salvas no talhão!')));
       if (provider.polygons.isNotEmpty) {
         _mapController.fitCamera(CameraFit.bounds(bounds: LatLngBounds.fromPoints(provider.polygons.expand((p) => p.points).toList()), padding: const EdgeInsets.all(50.0)));
       }
@@ -70,51 +68,39 @@ class _MapImportPageState extends State<MapImportPage> {
 
   Future<void> _handleGenerateSamples() async {
     final provider = context.read<MapProvider>();
-    if (provider.farmName.isEmpty || provider.blockName.isEmpty) {
-      final projectData = await _showDataInputDialog(isImport: false, requireDensity: true);
-      if (projectData == null) return;
-      await provider.updateProjectInfo(farmName: projectData['farmName'], blockName: projectData['blockName'], idFazenda: projectData['farmId']);
-      final count = await provider.generateSamples(hectaresPerSample: projectData['hectares'], farmName: provider.farmName, blockName: provider.blockName, idFazenda: provider.idFazenda);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$count amostras geradas!')));
-      }
-    } else {
-      final sampleData = await _showDataInputDialog(isImport: false, requireDensity: true);
-      if (sampleData == null) return;
-      final count = await provider.generateSamples(hectaresPerSample: sampleData['hectares'], farmName: provider.farmName, blockName: provider.blockName, idFazenda: provider.idFazenda);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$count amostras geradas!')));
-      }
+    if (provider.polygons.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Desenhe ou importe uma área primeiro.')));
+      return;
+    }
+
+    final density = await _showDensityDialog();
+    if (density == null || !mounted) return;
+    
+    final count = await provider.generateSamples(talhao: widget.talhao, hectaresPerSample: density);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$count amostras geradas!')));
     }
   }
 
-  Future<Map<String, dynamic>?> _showDataInputDialog({bool isImport = false, bool requireDensity = false}) {
-    final formKey = GlobalKey<FormState>();
+  Future<double?> _showDensityDialog() {
     final densityController = TextEditingController();
-    final farmController = TextEditingController(text: context.read<MapProvider>().farmName);
-    final blockController = TextEditingController(text: context.read<MapProvider>().blockName);
-    final farmIdController = TextEditingController(text: context.read<MapProvider>().idFazenda);
-
-    return showDialog<Map<String, dynamic>>(
+    final formKey = GlobalKey<FormState>();
+    return showDialog<double>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(isImport ? 'Dados do Projeto Importado' : 'Dados da Amostragem'),
+        title: const Text('Densidade da Amostragem'),
         content: Form(
           key: formKey,
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextFormField(controller: farmController, autofocus: true, decoration: const InputDecoration(labelText: 'Nome da Fazenda'), validator: (value) => (value == null || value.isEmpty) ? 'Campo obrigatório' : null),
-              const SizedBox(height: 8),
-              TextFormField(controller: farmIdController, decoration: const InputDecoration(labelText: 'Código da Fazenda (Opcional)')),
-              const SizedBox(height: 8),
-              TextFormField(controller: blockController, decoration: const InputDecoration(labelText: 'Nome do Talhão'), validator: (value) => (value == null || value.isEmpty) ? 'Campo obrigatório' : null),
-              if (requireDensity)
-                TextFormField(controller: densityController, decoration: const InputDecoration(labelText: 'Hectares por amostra', suffixText: 'ha'), keyboardType: const TextInputType.numberWithOptions(decimal: true), validator: (value) {
-                  if (value == null || value.isEmpty) return 'Campo obrigatório';
-                  if (double.tryParse(value.replaceAll(',', '.')) == null) return 'Número inválido';
-                  return null;
-                }),
-            ]),
+          child: TextFormField(
+            controller: densityController,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Hectares por amostra', suffixText: 'ha'),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            validator: (value) {
+              if (value == null || value.isEmpty) return 'Campo obrigatório';
+              if (double.tryParse(value.replaceAll(',', '.')) == null) return 'Número inválido';
+              return null;
+            }
           ),
         ),
         actions: [
@@ -122,10 +108,10 @@ class _MapImportPageState extends State<MapImportPage> {
           ElevatedButton(
             onPressed: () {
               if (formKey.currentState!.validate()) {
-                Navigator.pop(context, {'farmName': farmController.text.trim(), 'farmId': farmIdController.text.trim(), 'blockName': blockController.text.trim(), 'hectares': (densityController.text.isEmpty) ? 0.0 : double.parse(densityController.text.replaceAll(',', '.'))});
+                Navigator.pop(context, double.parse(densityController.text.replaceAll(',', '.')));
               }
             },
-            child: Text(isImport ? 'Salvar Projeto' : 'Gerar'),
+            child: const Text('Gerar'),
           ),
         ],
       ),
@@ -145,9 +131,9 @@ class _MapImportPageState extends State<MapImportPage> {
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permissão de localização negada.'))); return; }
+      if (permission == LocationPermission.denied && mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permissão de localização negada.'))); return; }
     }
-    if (permission == LocationPermission.deniedForever) { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permissão negada permanentemente.'))); return; }
+    if (permission == LocationPermission.deniedForever && mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permissão negada permanentemente.'))); return; }
     try {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Buscando sua localização...')));
@@ -161,29 +147,15 @@ class _MapImportPageState extends State<MapImportPage> {
     }
   }
 
-  // --- WIDGETS DE UI ATUALIZADOS ---
-
   AppBar _buildDefaultAppBar(MapProvider mapProvider) {
     return AppBar(
-      title: const Text('Mapa de Amostragem'),
+      title: Text('Talhão: ${widget.talhao.nome}'),
       actions: [
-        // ===============================================================
-        // ---> MUDANÇA: NOVOS ÍCONES NA APPBAR <---
-        // ===============================================================
         if (mapProvider.polygons.isNotEmpty)
-          IconButton(
-            icon: const Icon(Icons.grid_on_sharp),
-            onPressed: _handleGenerateSamples,
-            tooltip: 'Gerar Amostras',
-          ),
-        IconButton(
-          icon: const Icon(Icons.edit_location_alt_outlined),
-          onPressed: () => mapProvider.startDrawing(),
-          tooltip: 'Desenhar Área',
-        ),
-        // Ícones antigos
+          IconButton(icon: const Icon(Icons.grid_on_sharp), onPressed: _handleGenerateSamples, tooltip: 'Gerar Amostras'),
+        IconButton(icon: const Icon(Icons.edit_location_alt_outlined), onPressed: () => mapProvider.startDrawing(), tooltip: 'Desenhar Área'),
         if (mapProvider.polygons.isNotEmpty || mapProvider.samplePoints.isNotEmpty)
-          IconButton(icon: const Icon(Icons.share_outlined), onPressed: () => _exportService.exportProjectAsGeoJson(context: context, areaPolygons: mapProvider.polygons, samplePoints: mapProvider.samplePoints, farmName: mapProvider.farmName, blockName: mapProvider.blockName), tooltip: 'Exportar Projeto (GeoJSON)'),
+          IconButton(icon: const Icon(Icons.share_outlined), onPressed: () => _exportService.exportProjectAsGeoJson(context: context, areaPolygons: mapProvider.polygons, samplePoints: mapProvider.samplePoints, farmName: mapProvider.currentTalhao?.fazendaId ?? '', blockName: mapProvider.currentTalhao?.nome ?? ''), tooltip: 'Exportar Projeto (GeoJSON)'),
         IconButton(icon: const Icon(Icons.file_upload_outlined), onPressed: mapProvider.isLoading ? null : _handleImport, tooltip: 'Importar Novo GeoJSON'),
       ],
     );
@@ -234,12 +206,10 @@ class _MapImportPageState extends State<MapImportPage> {
             children: [
               TileLayer(urlTemplate: mapProvider.currentTileUrl, userAgentPackageName: 'com.example.geoforestcoletor'),
               if (mapProvider.polygons.isNotEmpty) PolygonLayer(polygons: mapProvider.polygons),
-              
               if (isDrawing && mapProvider.drawnPoints.isNotEmpty)
                 PolylineLayer(polylines: [
                   Polyline(points: mapProvider.drawnPoints, strokeWidth: 2.0, color: Colors.red.withOpacity(0.8)),
                 ]),
-              
               if (isDrawing)
                 MarkerLayer(
                   markers: mapProvider.drawnPoints.map((point) {
@@ -269,7 +239,7 @@ class _MapImportPageState extends State<MapImportPage> {
                         if (!mounted || parcela == null) return;
                         final foiAtualizado = await Navigator.push<bool>(context, MaterialPageRoute(builder: (context) => ColetaDadosPage(parcelaParaEditar: parcela)));
                         if (foiAtualizado == true && mounted) {
-                          await context.read<MapProvider>().loadSamplesFromDb(farmName: mapProvider.farmName, blockName: mapProvider.blockName);
+                          await context.read<MapProvider>().loadSamplesFromTalhao(widget.talhao);
                         }
                       },
                       child: Container(
@@ -297,9 +267,6 @@ class _MapImportPageState extends State<MapImportPage> {
           if (mapProvider.isLoading)
             Container(color: Colors.black.withOpacity(0.5), child: const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(), SizedBox(height: 16), Text("Processando...", style: TextStyle(color: Colors.white, fontSize: 16))]))),
           
-          // ===============================================================
-          // ---> MUDANÇA: FABS AGORA NO CANTO SUPERIOR ESQUERDO <---
-          // ===============================================================
           if (!isDrawing)
             Positioned(
               top: 10,
@@ -331,7 +298,6 @@ class _MapImportPageState extends State<MapImportPage> {
             ),
         ],
       ),
-      // Remove o FAB principal, pois as ações foram para a AppBar
       floatingActionButton: null, 
     );
   }

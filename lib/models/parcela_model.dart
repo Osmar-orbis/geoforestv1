@@ -1,8 +1,9 @@
-// lib/models/parcela_model.dart (VERSÃO COM NOVOS CAMPOS)
+// lib/models/parcela_model.dart (VERSÃO FINAL E CORRIGIDA)
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/models/arvore_model.dart';
 
+// Seu enum de status está perfeito e foi mantido.
 enum StatusParcela {
   pendente(Icons.pending_outlined, Colors.grey),
   emAndamento(Icons.edit_note_outlined, Colors.orange),
@@ -16,10 +17,15 @@ enum StatusParcela {
 
 class Parcela {
   int? dbId;
+  int? talhaoId; // <<< CHAVE ESTRANGEIRA PARA O TALHÃO
   DateTime? dataColeta;
+  
+  // Campos antigos mantidos como opcionais para compatibilidade
   final String? idFazenda;
-  final String nomeFazenda;
-  final String nomeTalhao;
+  final String? nomeFazenda;
+  final String? nomeTalhao;
+
+  // Campos principais
   final String idParcela;
   final double areaMetrosQuadrados;
   final String? espacamento;
@@ -32,8 +38,6 @@ class Parcela {
   final double? largura;
   final double? comprimento;
   final double? raio;
-
-  // <<< NOVOS CAMPOS ADICIONADOS AQUI >>>
   final double? idadeFloresta;
   final double? areaTalhao;
 
@@ -41,29 +45,32 @@ class Parcela {
 
   Parcela({
     this.dbId,
-    this.idFazenda,
-    required this.nomeFazenda,
-    required this.nomeTalhao,
+    required this.talhaoId, // <<< AGORA É OBRIGATÓRIO
     required this.idParcela,
     required this.areaMetrosQuadrados,
+    this.idFazenda,
+    this.nomeFazenda, // Opcional
+    this.nomeTalhao,  // Opcional
     this.espacamento,
     this.observacao,
     this.latitude,
     this.longitude,
     this.dataColeta,
-    required this.status,
+    this.status = StatusParcela.pendente, // Valor padrão
     this.exportada = false,
     this.isSynced = false,
     this.largura,
     this.comprimento,
     this.raio,
-    this.idadeFloresta, // <<< NOVO
-    this.areaTalhao,    // <<< NOVO
+    this.idadeFloresta,
+    this.areaTalhao,
     this.arvores = const [],
   });
 
+  // copyWith atualizado para incluir talhaoId
   Parcela copyWith({
     int? dbId,
+    int? talhaoId,
     String? idFazenda,
     String? nomeFazenda,
     String? nomeTalhao,
@@ -80,12 +87,13 @@ class Parcela {
     double? largura,
     double? comprimento,
     double? raio,
-    double? idadeFloresta, // <<< NOVO
-    double? areaTalhao,    // <<< NOVO
+    double? idadeFloresta,
+    double? areaTalhao,
     List<Arvore>? arvores,
   }) {
     return Parcela(
       dbId: dbId ?? this.dbId,
+      talhaoId: talhaoId ?? this.talhaoId,
       idFazenda: idFazenda ?? this.idFazenda,
       nomeFazenda: nomeFazenda ?? this.nomeFazenda,
       nomeTalhao: nomeTalhao ?? this.nomeTalhao,
@@ -102,8 +110,8 @@ class Parcela {
       largura: largura ?? this.largura,
       comprimento: comprimento ?? this.comprimento,
       raio: raio ?? this.raio,
-      idadeFloresta: idadeFloresta ?? this.idadeFloresta, // <<< NOVO
-      areaTalhao: areaTalhao ?? this.areaTalhao,          // <<< NOVO
+      idadeFloresta: idadeFloresta ?? this.idadeFloresta,
+      areaTalhao: areaTalhao ?? this.areaTalhao,
       arvores: arvores ?? this.arvores,
     );
   }
@@ -111,6 +119,7 @@ class Parcela {
   Map<String, dynamic> toMap() {
     return {
       'id': dbId,
+      'talhaoId': talhaoId, // <<< SALVA O ID DO TALHÃO
       'idFazenda': idFazenda,
       'nomeFazenda': nomeFazenda,
       'nomeTalhao': nomeTalhao,
@@ -127,14 +136,15 @@ class Parcela {
       'largura': largura,
       'comprimento': comprimento,
       'raio': raio,
-      'idadeFloresta': idadeFloresta, // <<< NOVO
-      'areaTalhao': areaTalhao,       // <<< NOVO
+      'idadeFloresta': idadeFloresta,
+      'areaTalhao': areaTalhao,
     };
   }
 
   factory Parcela.fromMap(Map<String, dynamic> map) {
     return Parcela(
       dbId: map['id'],
+      talhaoId: map['talhaoId'], // <<< LÊ O ID DO TALHÃO
       idFazenda: map['idFazenda'],
       nomeFazenda: map['nomeFazenda'],
       nomeTalhao: map['nomeTalhao'],
@@ -154,8 +164,8 @@ class Parcela {
       largura: map['largura'],
       comprimento: map['comprimento'],
       raio: map['raio'],
-      idadeFloresta: map['idadeFloresta'], // <<< NOVO
-      areaTalhao: map['areaTalhao'],       // <<< NOVO
+      idadeFloresta: map['idadeFloresta'],
+      areaTalhao: map['areaTalhao'],
     );
   }
 }

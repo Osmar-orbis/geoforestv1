@@ -1,4 +1,4 @@
-// lib/main.dart (VERSÃO CORRIGIDA E COMPLETA)
+// lib/main.dart (VERSÃO CORRIGIDA PARA INCLUIR A EQUIPE PAGE)
 
 // ignore_for_file: deprecated_member_use, duplicate_ignore
 
@@ -13,11 +13,11 @@ import 'firebase_options.dart';
 // Importações do Projeto
 import 'package:geoforestcoletor/pages/menu/home_page.dart';
 import 'package:geoforestcoletor/pages/menu/login_page.dart';
-import 'package:geoforestcoletor/pages/menu/map_import_page.dart';
 import 'package:geoforestcoletor/pages/menu/equipe_page.dart';
 import 'package:geoforestcoletor/providers/map_provider.dart';
-import 'package:geoforestcoletor/providers/team_provider.dart'; // <<< Provider da equipe
+import 'package:geoforestcoletor/providers/team_provider.dart';
 import 'package:geoforestcoletor/controller/login_controller.dart';
+import 'package:geoforestcoletor/pages/projetos/lista_projetos_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,15 +53,11 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
-      // ====================================================================
-      // AJUSTE PRINCIPAL FEITO AQUI
-      // ====================================================================
       providers: [
         ChangeNotifierProvider(create: (_) => LoginController()),
         ChangeNotifierProvider(create: (_) => MapProvider()),
-        ChangeNotifierProvider(create: (_) => TeamProvider()), // <<< LINHA ADICIONADA
+        ChangeNotifierProvider(create: (_) => TeamProvider()),
       ],
-      // ====================================================================
       child: MaterialApp(
         title: 'Geo Forest Analytics',
         debugShowCheckedModeBanner: false,
@@ -71,24 +67,37 @@ class MyApp extends StatelessWidget {
         routes: {
           '/': (context) {
             return Consumer<LoginController>(
-              builder: (context, controller, child) {
-                if (!controller.isInitialized) {
+              builder: (context, loginController, child) {
+                if (!loginController.isInitialized) {
                   return const Scaffold(
                     body: Center(child: CircularProgressIndicator()),
                   );
                 }
                 
-                if (controller.isLoggedIn) {
-                  return const EquipePage();
+                if (loginController.isLoggedIn) {
+                  // ===============================================================
+                  // <<< CORREÇÃO APLICADA AQUI >>>
+                  // Verificamos o TeamProvider para decidir para qual tela ir.
+                  //================================================================
+                  final teamProvider = Provider.of<TeamProvider>(context, listen: true);
+                  
+                  // Se o líder não foi definido, mostramos a tela da equipe.
+                  if (teamProvider.lider == null || teamProvider.lider!.trim().isEmpty) {
+                    return const EquipePage();
+                  } else {
+                    // Se a equipe já foi definida, vamos para a HomePage.
+                    return const HomePage(title: 'Geo Forest Analytics');
+                  }
                 } else {
                   return const LoginPage();
                 }
               },
             );
           },
+          // As outras rotas permanecem as mesmas
           '/equipe': (context) => const EquipePage(),
           '/home': (context) => const HomePage(title: 'Geo Forest Analytics'),
-          '/map_import': (context) => const MapImportPage(),
+          '/lista_projetos': (context) => const ListaProjetosPage(),
         },
         navigatorObservers: [RouteObserver<PageRoute>()],
         builder: (context, child) {
@@ -141,6 +150,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
+// ... (classe ErrorScreen sem alterações) ...
 class ErrorScreen extends StatelessWidget {
   final String message;
   final VoidCallback? onRetry;

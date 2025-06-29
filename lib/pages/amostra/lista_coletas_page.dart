@@ -1,4 +1,4 @@
-// lib/pages/amostra/lista_coletas_page.dart (CORRIGIDO)
+// lib/pages/menu/lista_coletas_page.dart (CORRIGIDO)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -284,13 +284,12 @@ class _ListaColetasPageState extends State<ListaColetasPage> {
                   child: const Icon(Icons.forest),
                   label: 'Nova Coleta de Parcela',
                   onTap: () {
-                    // <<< CORREÇÃO APLICADA AQUI >>>
                     final novaParcelaAvulsa = Parcela(
-                      talhaoId: null, // Indica que é uma coleta avulsa, não ligada a um talhão
+                      // <<< ALTERADO: usa o construtor correto
+                      talhaoId: null, // Indica que é uma coleta avulsa
                       idParcela: '', 
                       areaMetrosQuadrados: 0, 
-                      dataColeta: DateTime.now(),
-                      // O status já tem o valor padrão de 'pendente' no modelo
+                      dataColeta: DateTime.now()
                     );
                     Navigator.push<bool>(context, MaterialPageRoute(builder: (context) => ColetaDadosPage(parcelaParaEditar: novaParcelaAvulsa))).then((foiAtualizado) {
                       if (foiAtualizado == true) _refreshData();

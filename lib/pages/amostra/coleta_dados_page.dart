@@ -1,4 +1,4 @@
-// lib/pages/amostra/coleta_dados_page.dart (VERSÃO FINAL COM DIÁLOGO)
+// lib/pages/amostra/coleta_dados_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -6,7 +6,6 @@ import 'dart:math' as math;
 import 'package:geoforestcoletor/models/parcela_model.dart';
 import 'package:geoforestcoletor/pages/amostra/inventario_page.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
-// <<< MUDANÇA: IMPORTANDO O NOVO DIÁLOGO >>>
 import 'package:geoforestcoletor/widgets/informacoes_adicionais_dialog.dart';
 
 enum FormaParcela { retangular, circular }
@@ -21,7 +20,7 @@ class ColetaDadosPage extends StatefulWidget {
 
 class _ColetaDadosPageState extends State<ColetaDadosPage> {
   final _formKey = GlobalKey<FormState>();
-  final dbHelper = DatabaseHelper();
+  final dbHelper = DatabaseHelper.instance;
   late Parcela _parcelaAtual;
 
   final _nomeFazendaController = TextEditingController();
@@ -32,7 +31,6 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
   final _larguraController = TextEditingController();
   final _comprimentoController = TextEditingController();
   final _raioController = TextEditingController();
-  // <<< MUDANÇA: REMOÇÃO DO _espacamentoController >>>
 
   Position? _posicaoAtual;
   bool _buscandoLocalizacao = false;
@@ -55,13 +53,14 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
   Future<void> _carregarDadosDaParcela() async {
     if (_parcelaAtual.dbId != null) {
       final parcelaDoBanco = await dbHelper.getParcelaById(_parcelaAtual.dbId!);
-      final arvores = await dbHelper.getArvoresDaParcela(_parcelaAtual.dbId!);
-
-      if (parcelaDoBanco != null && mounted) {
-        setState(() {
-          _parcelaAtual = parcelaDoBanco;
-          _temArvoresColetadas = arvores.isNotEmpty;
-        });
+      if (parcelaDoBanco != null) {
+        final arvores = await dbHelper.getArvoresDaParcela(parcelaDoBanco.dbId!);
+        if (mounted) {
+          setState(() {
+            _parcelaAtual = parcelaDoBanco;
+            _temArvoresColetadas = arvores.isNotEmpty;
+          });
+        }
       }
     }
     _preencherDadosIniciais();
@@ -69,11 +68,10 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
 
   void _preencherDadosIniciais() {
     final p = _parcelaAtual;
-    _nomeFazendaController.text = p.nomeFazenda;
+    _nomeFazendaController.text = p.nomeFazenda ?? '';
+    _talhaoParcelaController.text = p.nomeTalhao ?? '';
     _idFazendaController.text = p.idFazenda ?? '';
-    _talhaoParcelaController.text = p.nomeTalhao;
     _idParcelaController.text = p.idParcela;
-    // <<< MUDANÇA: O _espacamentoController não é mais preenchido aqui >>>
     _observacaoController.text = p.observacao ?? '';
     _areaCalculada = p.areaMetrosQuadrados;
 
@@ -98,7 +96,6 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
     _idFazendaController.dispose();
     _talhaoParcelaController.dispose();
     _idParcelaController.dispose();
-    // <<< MUDANÇA: O _espacamentoController não é mais removido daqui >>>
     _observacaoController.dispose();
     _larguraController.dispose();
     _comprimentoController.dispose();
@@ -120,8 +117,8 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
   }
 
   Parcela _construirObjetoParcela() {
-    // <<< MUDANÇA: O espaçamento já está em _parcelaAtual, não precisa ser pego de um controller >>>
     return _parcelaAtual.copyWith(
+      talhaoId: _parcelaAtual.talhaoId,
       nomeFazenda: _nomeFazendaController.text.trim(),
       idFazenda: _idFazendaController.text.trim().isNotEmpty ? _idFazendaController.text.trim() : null,
       nomeTalhao: _talhaoParcelaController.text.trim(),
@@ -137,7 +134,6 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
     );
   }
   
-  // <<< MUDANÇA: NOVA FUNÇÃO PARA ABRIR O DIÁLOGO >>>
   Future<void> _abrirDialogoInfoAdicionais() async {
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -172,11 +168,11 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
       final parcelaSalva = await dbHelper.saveFullColeta(parcelaAtualizada, []);
 
       if (mounted) {
-        await Navigator.push(
+        await Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => InventarioPage(parcela: parcelaSalva)),
         );
-        await _carregarDadosDaParcela();
+        Navigator.pop(context, true); 
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
@@ -267,7 +263,8 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isModoNovo = _parcelaAtual.status == StatusParcela.pendente && !_temArvoresColetadas;
+    // A condição aqui fica mais simples, apenas para controlar o título da AppBar.
+    final bool isModoNovo = _parcelaAtual.dbId == null;
 
     return Scaffold(
       appBar: AppBar(
@@ -282,14 +279,14 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextFormField(controller: _nomeFazendaController, decoration: const InputDecoration(labelText: 'Nome da Fazenda', border: OutlineInputBorder(), prefixIcon: Icon(Icons.business)), validator: (v) => v == null || v.trim().length < 2 ? 'Campo obrigatório' : null),
+              TextFormField(controller: _nomeFazendaController, decoration: const InputDecoration(labelText: 'Nome da Fazenda (Opcional)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.business)), ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _idFazendaController,
                 decoration: const InputDecoration(labelText: 'Código da Fazenda (Opcional)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.pin_outlined)),
               ),
               const SizedBox(height: 16),
-              TextFormField(controller: _talhaoParcelaController, decoration: const InputDecoration(labelText: 'Talhão', border: OutlineInputBorder(), prefixIcon: Icon(Icons.grid_on)), validator: (v) => v == null || v.trim().isEmpty ? 'Campo obrigatório' : null),
+              TextFormField(controller: _talhaoParcelaController, decoration: const InputDecoration(labelText: 'Talhão (Opcional)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.grid_on)), ),
               const SizedBox(height: 16),
               TextFormField(controller: _idParcelaController, decoration: const InputDecoration(labelText: 'ID da parcela', border: OutlineInputBorder(), prefixIcon: Icon(Icons.tag)), validator: (v) => v == null || v.trim().isEmpty ? 'Campo obrigatório' : null),
               const SizedBox(height: 16),
@@ -298,7 +295,6 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
               _buildColetorCoordenadas(),
               const SizedBox(height: 24),
               
-              // <<< MUDANÇA: BOTÃO PARA ABRIR O DIÁLOGO >>>
               SizedBox(
                 height: 50,
                 width: double.infinity,
@@ -317,7 +313,7 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
               const SizedBox(height: 16),
               TextFormField(controller: _observacaoController, decoration: const InputDecoration(labelText: 'Observações da Parcela', border: OutlineInputBorder(), prefixIcon: Icon(Icons.comment), helperText: 'Opcional'), maxLines: 3),
               const SizedBox(height: 24),
-              _buildActionButtons(isModoNovo),
+              _buildActionButtons(), // <<< MUDANÇA: A condição agora está dentro do método
             ],
           ),
         ),
@@ -325,8 +321,10 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
     );
   }
 
-  Widget _buildActionButtons(bool isNovaColeta) {
-    if (isNovaColeta) {
+  // <<< MUDANÇA: O método agora contém a lógica completa >>>
+  Widget _buildActionButtons() {
+    // A condição para nova coleta agora também verifica se existem árvores.
+    if (_parcelaAtual.dbId == null && !_temArvoresColetadas) {
       return Row(
         children: [
           Expanded(child: SizedBox(height: 50, child: OutlinedButton(onPressed: _salvando ? null : _finalizarParcelaVazia, style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF1D4433)), foregroundColor: const Color(0xFF1D4433)), child: const Text('Finalizar Vazia')))),
@@ -335,6 +333,7 @@ class _ColetaDadosPageState extends State<ColetaDadosPage> {
         ],
       );
     } else {
+      // Se a parcela já existe ou se é nova mas já tem árvores, mostra os botões de edição.
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

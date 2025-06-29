@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
 import 'package:geoforestcoletor/models/arvore_model.dart';
 import 'package:geoforestcoletor/models/parcela_model.dart';
+import 'package:geoforestcoletor/models/talhao_model.dart';
 import 'package:geoforestcoletor/services/analysis_service.dart';
 import 'package:geoforestcoletor/services/pdf_service.dart';
 import 'package:geoforestcoletor/widgets/grafico_distribuicao_widget.dart';
@@ -11,13 +12,12 @@ import 'package:geoforestcoletor/pages/analises/simulacao_desbaste_page.dart';
 import 'package:geoforestcoletor/pages/analises/rendimento_dap_page.dart';
 
 class TalhaoDashboardPage extends StatefulWidget {
-  final String nomeFazenda;
-  final String nomeTalhao;
+  // A página agora recebe o objeto Talhao completo.
+  final Talhao talhao;
 
   const TalhaoDashboardPage({
     super.key,
-    required this.nomeFazenda,
-    required this.nomeTalhao,
+    required this.talhao,
   });
 
   @override
@@ -41,10 +41,9 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
   }
 
   Future<void> _carregarEAnalisarTalhao() async {
-    final dadosAgregados = await _dbHelper.getDadosAgregadosDoTalhao(
-      widget.nomeFazenda,
-      widget.nomeTalhao,
-    );
+    // Chama o novo método do DatabaseHelper usando o ID do talhão.
+    final dadosAgregados = await _dbHelper.getDadosAgregadosDoTalhao(widget.talhao.id!);
+    
     _parcelasDoTalhao = dadosAgregados['parcelas'] as List<Parcela>;
     _arvoresDoTalhao = dadosAgregados['arvores'] as List<Arvore>;
 
@@ -70,7 +69,6 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
     );
   }
 
-  // <<< MÉTODO ATUALIZADO >>>
   void _analisarRendimento() {
     if (_analysisResult == null) return;
 
@@ -87,10 +85,11 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
       context,
       MaterialPageRoute(
         builder: (context) => RendimentoDapPage(
-          nomeFazenda: widget.nomeFazenda,
-          nomeTalhao: widget.nomeTalhao,
+          // Usa as informações do objeto talhao.
+          nomeFazenda: widget.talhao.fazendaId, // Usando o ID da fazenda
+          nomeTalhao: widget.talhao.nome,
           dadosRendimento: resultadoRendimento,
-          analiseGeral: _analysisResult!, // Passando a análise geral
+          analiseGeral: _analysisResult!,
         ),
       ),
     );
@@ -170,10 +169,13 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
       totalParaCubar,
     );
 
+    // Garante que o BuildContext não seja usado em um gap assíncrono
+    if (!mounted) return;
+
     await _pdfService.gerarPlanoCubagemPdf(
       context: context,
-      nomeFazenda: widget.nomeFazenda,
-      nomeTalhao: widget.nomeTalhao,
+      nomeFazenda: widget.talhao.fazendaId,
+      nomeTalhao: widget.talhao.nome,
       planoDeCubagem: plano,
     );
   }
@@ -181,7 +183,7 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Análise: ${widget.nomeTalhao}')),
+      appBar: AppBar(title: Text('Análise: ${widget.talhao.nome}')),
       body: FutureBuilder<void>(
         future: _dataLoadingFuture,
         builder: (context, snapshot) {

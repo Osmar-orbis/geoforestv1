@@ -1,9 +1,10 @@
-// lib/pages/analise/analise_selecao_page.dart
+// lib/pages/analises/analise_selecao_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
+import 'package:geoforestcoletor/models/talhao_model.dart';
 import 'package:geoforestcoletor/pages/dashboard/talhao_dashboard_page.dart';
-
+import 'package:collection/collection.dart'; // Import para groupBy
 
 class AnaliseSelecaoPage extends StatefulWidget {
   const AnaliseSelecaoPage({super.key});
@@ -14,27 +15,33 @@ class AnaliseSelecaoPage extends StatefulWidget {
 
 class _AnaliseSelecaoPageState extends State<AnaliseSelecaoPage> {
   final dbHelper = DatabaseHelper.instance;
-  Map<String, List<String>> _projetos = {}; // Mapa: { 'Nome Fazenda': ['Talhao1', 'Talhao2'] }
+  // Agora a lista é de objetos Talhao.
+  Map<String, List<Talhao>> _talhoesPorFazenda = {};
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _carregarProjetos();
+    _carregarTalhoes();
   }
 
-  Future<void> _carregarProjetos() async {
+  Future<void> _carregarTalhoes() async {
     setState(() => _isLoading = true);
-    final projetosDoBanco = await dbHelper.getProjetosDisponiveis();
+    // Busca todos os talhões que têm parcelas concluídas.
+    final talhoesCompletos = await dbHelper.getTalhoesComParcelasConcluidas();
+
+    // Agrupa os talhões pelo ID da fazenda.
+    final groupedData = groupBy(talhoesCompletos, (Talhao talhao) => talhao.fazendaId);
+    
     setState(() {
-      _projetos = projetosDoBanco;
+      _talhoesPorFazenda = groupedData;
       _isLoading = false;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final fazendas = _projetos.keys.toList();
+    final fazendas = _talhoesPorFazenda.keys.toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -56,27 +63,27 @@ class _AnaliseSelecaoPageState extends State<AnaliseSelecaoPage> {
               : ListView.builder(
                   itemCount: fazendas.length,
                   itemBuilder: (context, index) {
-                    final nomeFazenda = fazendas[index];
-                    final talhoes = _projetos[nomeFazenda]!;
+                    final idFazenda = fazendas[index];
+                    final talhoes = _talhoesPorFazenda[idFazenda]!;
                     
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       child: ExpansionTile(
                         leading: const Icon(Icons.business_outlined),
-                        title: Text(nomeFazenda, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        title: Text('Fazenda ID: $idFazenda', style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text('${talhoes.length} talhão(ões) disponíveis'),
-                        children: talhoes.map((nomeTalhao) {
+                        children: talhoes.map((talhao) {
                           return ListTile(
                             leading: const Icon(Icons.forest_outlined, color: Colors.green),
-                            title: Text('Talhão: $nomeTalhao'),
+                            title: Text('Talhão: ${talhao.nome}'),
                             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                             onTap: () {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
+                                  // Passa o objeto Talhao completo para a página de dashboard.
                                   builder: (context) => TalhaoDashboardPage(
-                                    nomeFazenda: nomeFazenda,
-                                    nomeTalhao: nomeTalhao,
+                                    talhao: talhao,
                                   ),
                                 ),
                               );
