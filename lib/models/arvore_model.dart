@@ -82,8 +82,8 @@ class Arvore {
       'posicaoNaLinha': posicaoNaLinha,
       'fimDeLinha': fimDeLinha ? 1 : 0,
       'dominante': dominante ? 1 : 0,
-      'status': codigo.name,
-      'status2': codigo2?.name,
+      'codigo': codigo.name,
+      'codigo2': codigo2?.name,
       'capAuditoria': capAuditoria,
       'alturaAuditoria': alturaAuditoria,
     };
@@ -98,8 +98,8 @@ class Arvore {
       posicaoNaLinha: map['posicaoNaLinha'] ?? 0,
       fimDeLinha: map['fimDeLinha'] == 1,
       dominante: map['dominante'] == 1,
-      codigo: Codigo.values.firstWhere((e) => e.name == map['status'], orElse: () => Codigo.normal),
-      codigo2: map['status2'] != null ? Codigo2.values.firstWhere((e) => e.name == map['status2']) : null,
+      codigo: Codigo.values.firstWhere((e) => e.name == map['codigo'], orElse: () => Codigo.normal),
+      codigo2: map['codigo2'] != null ? Codigo2.values.firstWhere((e) => e.name == map['codigo2']) : null,
       capAuditoria: map['capAuditoria']?.toDouble(),
       alturaAuditoria: map['alturaAuditoria']?.toDouble(),
     );

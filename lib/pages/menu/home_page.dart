@@ -2,15 +2,16 @@
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
+import 'package:geoforestcoletor/pages/analises/analise_selecao_page.dart';
 import 'package:geoforestcoletor/pages/menu/configuracoes_page.dart';
 import 'package:geoforestcoletor/pages/menu/sobre_page.dart';
+import 'package:geoforestcoletor/pages/projetos/lista_projetos_page.dart';
 import 'package:geoforestcoletor/providers/map_provider.dart';
 import 'package:geoforestcoletor/services/export_service.dart';
 import 'package:geoforestcoletor/widgets/menu_card.dart';
 import 'package:provider/provider.dart';
-import 'package:geoforestcoletor/pages/analises/analise_selecao_page.dart';
-import 'package:geoforestcoletor/pages/projetos/lista_projetos_page.dart'; // CORRIGIDO PARA O CAMINHO CORRETO
 
+// PARTE 1: A DEFINIÇÃO DA CLASSE PRINCIPAL (StatefulWidget)
 class HomePage extends StatefulWidget {
   const HomePage({super.key, required this.title});
   final String title;
@@ -19,6 +20,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
+// PARTE 2: A CLASSE DE ESTADO (Onde fica toda a lógica e a interface)
 class _HomePageState extends State<HomePage> {
   void _abrirAnalistaDeDados(BuildContext context) {
     Navigator.push(
@@ -28,9 +30,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _mostrarDialogoExportacao(BuildContext context) {
-    final dbHelper = DatabaseHelper.instance; 
+    final dbHelper = DatabaseHelper.instance;
     final exportService = ExportService();
+    // Usamos 'read' aqui pois não precisamos ouvir por mudanças dentro deste método.
     final mapProvider = context.read<MapProvider>();
+
     showModalBottomSheet(
       context: context,
       builder: (ctx) => Container(
@@ -41,7 +45,10 @@ class _HomePageState extends State<HomePage> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(6, 0, 6, 10),
-              child: Text('Escolha o que deseja exportar', style: Theme.of(context).textTheme.titleLarge)
+              child: Text(
+                'Escolha o que deseja exportar',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
             ),
             ListTile(
               leading: const Icon(Icons.table_rows_outlined, color: Colors.green),
@@ -50,7 +57,7 @@ class _HomePageState extends State<HomePage> {
               onTap: () {
                 Navigator.of(ctx).pop();
                 dbHelper.exportarDados(context);
-              }
+              },
             ),
             ListTile(
               leading: const Icon(Icons.table_chart_outlined, color: Colors.brown),
@@ -59,7 +66,7 @@ class _HomePageState extends State<HomePage> {
               onTap: () {
                 Navigator.of(ctx).pop();
                 dbHelper.exportarCubagens(context);
-              }
+              },
             ),
             ListTile(
               leading: const Icon(Icons.map_outlined, color: Colors.purple),
@@ -68,22 +75,23 @@ class _HomePageState extends State<HomePage> {
               onTap: () {
                 Navigator.of(ctx).pop();
                 if (mapProvider.polygons.isEmpty && mapProvider.samplePoints.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não há projeto carregado no mapa para exportar.')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Não há projeto carregado no mapa para exportar.')),
+                  );
                   return;
                 }
                 exportService.exportProjectAsGeoJson(
                   context: context,
                   areaPolygons: mapProvider.polygons,
                   samplePoints: mapProvider.samplePoints,
-                  // Usa os dados do talhão atual no provider.
                   farmName: mapProvider.currentTalhao?.fazendaId ?? 'N/A',
                   blockName: mapProvider.currentTalhao?.nome ?? 'N/A',
                 );
-              }
-            )
-          ]
-        )
-      )
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -99,32 +107,41 @@ class _HomePageState extends State<HomePage> {
           mainAxisSpacing: 12.0,
           childAspectRatio: 1.0,
           children: [
-            
             MenuCard(
               icon: Icons.insights_outlined,
               label: 'GeoForest Analista',
-              onTap: () => _abrirAnalistaDeDados(context)
+              onTap: () => _abrirAnalistaDeDados(context),
             ),
-            // <<< ALTERADO: O painel de coletas agora é a tela de projetos >>>
             MenuCard(
-              icon: Icons.folder_copy_outlined, 
-              label: 'Projetos', 
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ListaProjetosPage()))
+              icon: Icons.folder_copy_outlined,
+              label: 'Projetos',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ListaProjetosPage(title: 'Meus Projetos'),
+                ),
+              ),
             ),
             MenuCard(
               icon: Icons.upload_file_outlined,
               label: 'Exportar Dados',
-              onTap: () => _mostrarDialogoExportacao(context)
+              onTap: () => _mostrarDialogoExportacao(context),
             ),
             MenuCard(
               icon: Icons.settings_outlined,
               label: 'Configurações',
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ConfiguracoesPage()))
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ConfiguracoesPage()),
+              ),
             ),
             MenuCard(
               icon: Icons.info_outline,
               label: 'Sobre',
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SobrePage()))
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SobrePage()),
+              ),
             ),
           ],
         ),

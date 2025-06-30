@@ -1,4 +1,4 @@
-// lib/pages/amostra/lista_coletas_page.dart (CORRIGIDO)
+// lib/pages/amostra/lista_projetos_page.dart (CORRIGIDO)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';

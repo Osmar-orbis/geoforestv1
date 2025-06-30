@@ -1,25 +1,33 @@
 // lib/pages/projetos/lista_projetos_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
 import 'package:geoforestcoletor/models/projeto_model.dart';
-import 'package:intl/intl.dart';
+import 'package:geoforestcoletor/pages/atividades/atividades_page.dart';
+import 'package:geoforestcoletor/services/export_service.dart';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 
-// Vamos importar as páginas que vamos usar a seguir.
-// Se elas ainda não existem, o editor pode sublinhar em vermelho, mas isso é esperado.
-import 'package:geoforestcoletor/pages/projetos/form_projeto_page.dart';
-import 'package:geoforestcoletor/pages/projetos/detalhes_projeto_page.dart';
+// 1. IMPORT ADICIONADO PARA A PÁGINA DO FORMULÁRIO
+import 'form_projeto_page.dart'; 
 
 class ListaProjetosPage extends StatefulWidget {
-  const ListaProjetosPage({super.key});
+  const ListaProjetosPage({super.key, required this.title});
+  final String title;
 
   @override
   State<ListaProjetosPage> createState() => _ListaProjetosPageState();
 }
 
 class _ListaProjetosPageState extends State<ListaProjetosPage> {
-  late Future<List<Projeto>> _projetosFuture;
   final dbHelper = DatabaseHelper.instance;
+  final exportService = ExportService();
+  List<Projeto> projetos = [];
+  bool _isLoading = true;
+
+  bool _isSelectionMode = false;
+  final Set<int> _selectedProjetos = {};
 
   @override
   void initState() {
@@ -27,129 +35,182 @@ class _ListaProjetosPageState extends State<ListaProjetosPage> {
     _carregarProjetos();
   }
 
-  // Busca os projetos do banco de dados e atualiza o estado da tela
-  void _carregarProjetos() {
+  Future<void> _carregarProjetos() async {
+    setState(() => _isLoading = true);
+    final data = await dbHelper.getTodosProjetos();
     setState(() {
-      _projetosFuture = dbHelper.getTodosProjetos();
+      projetos = data;
+      _isLoading = false;
     });
   }
 
-  // Navega para a tela de formulário para criar um novo projeto
-  void _navegarParaNovoProjeto() async {
-    // Aguarda o resultado da página de formulário
-    final bool? projetoCriado = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (context) => const FormProjetoPage()),
+  void _clearSelection() {
+    setState(() {
+      _selectedProjetos.clear();
+      _isSelectionMode = false;
+    });
+  }
+
+  void _toggleSelection(int projetoId) {
+    setState(() {
+      if (_selectedProjetos.contains(projetoId)) {
+        _selectedProjetos.remove(projetoId);
+      } else {
+        _selectedProjetos.add(projetoId);
+      }
+      _isSelectionMode = _selectedProjetos.isNotEmpty;
+    });
+  }
+
+  Future<void> _importarProjeto() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['geojson', 'json'],
     );
-    // Se a página de formulário retornar 'true', recarrega a lista de projetos
-    if (projetoCriado == true && mounted) {
-      _carregarProjetos();
+
+    if (result != null && result.files.single.path != null) {
+      File file = File(result.files.single.path!);
+      final fileContent = await file.readAsString();
+
+      final String message = await dbHelper.importarProjetoCompleto(fileContent);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(message),
+          duration: const Duration(seconds: 5),
+        ));
+        _carregarProjetos();
+      }
+    } else {
+      // Usuário cancelou a seleção
     }
   }
 
-// Em _ListaProjetosPageState
+  Future<void> _exportarProjetosSelecionados() async {
+    if (_selectedProjetos.isEmpty) return;
 
-  void _navegarParaDetalhesProjeto(Projeto projeto) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => DetalhesProjetoPage(projeto: projeto)),
-    ).then((_) {
-    // Opcional: Recarregar a lista de projetos caso algo mude na tela de detalhes.
-    // _carregarProjetos(); 
-  });
-}
-
-  // Deleta um projeto e todas as suas dependências (em cascata)
-  Future<void> _deletarProjeto(Projeto projeto) async {
-     final bool? confirmar = await showDialog<bool>(
+    await exportService.exportarProjetosCompletos(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar Exclusão'),
-        content: Text('Tem certeza que deseja apagar o projeto "${projeto.nome}" e TODAS as suas fazendas, talhões e coletas? Esta ação não pode ser desfeita.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Apagar Tudo'),
-          ),
-        ],
-      ),
+      projetoIds: _selectedProjetos.toList(),
     );
 
-    if(confirmar == true && mounted) {
-      await dbHelper.deleteProjeto(projeto.id!);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Projeto "${projeto.nome}" apagado.'), backgroundColor: Colors.green)
-      );
-      _carregarProjetos();
-    }
+    _clearSelection();
   }
 
+  Future<void> _deletarProjetosSelecionados() async {
+    if (_selectedProjetos.isEmpty) return;
+
+    final confirmar = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+              title: const Text('Confirmar Exclusão'),
+              content: Text(
+                  'Tem certeza que deseja apagar os ${_selectedProjetos.length} projetos selecionados? Todas as atividades, fazendas, talhões e coletas associadas serão perdidas permanentemente.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    child: const Text('Cancelar')),
+                FilledButton(
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    style:
+                        FilledButton.styleFrom(backgroundColor: Colors.red),
+                    child: const Text('Apagar')),
+              ],
+            ));
+    if (confirmar == true && mounted) {
+      for (final id in _selectedProjetos) {
+        await dbHelper.deleteProjeto(id);
+      }
+      _clearSelection();
+      await _carregarProjetos();
+    }
+  }
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Meus Projetos'),
-      ),
-      body: FutureBuilder<List<Projeto>>(
-        future: _projetosFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Erro ao carregar projetos: ${snapshot.error}'));
-          }
-          
-          final projetos = snapshot.data ?? [];
-
-          if (projetos.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24.0),
-                child: Text(
-                  'Nenhum projeto encontrado.\nClique no botão "+" para criar o primeiro.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, color: Colors.grey),
-                ),
+      appBar: _isSelectionMode
+          ? AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: _clearSelection,
               ),
-            );
-          }
-
-          return RefreshIndicator(
-            onRefresh: () async => _carregarProjetos(),
-            child: ListView.builder(
-              padding: const EdgeInsets.only(top: 8, bottom: 80),
-              itemCount: projetos.length,
-              itemBuilder: (context, index) {
-                final projeto = projetos[index];
-                return Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      child: Icon(Icons.folder_copy_outlined),
-                    ),
-                    title: Text(projeto.nome, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(
-                      'Empresa: ${projeto.empresa}\nCriado em: ${DateFormat('dd/MM/yyyy').format(projeto.dataCriacao)}',
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                      onPressed: () => _deletarProjeto(projeto),
-                      tooltip: 'Excluir Projeto',
-                    ),
-                    onTap: () => _navegarParaDetalhesProjeto(projeto),
-                  ),
-                );
-              },
+              title: Text('${_selectedProjetos.length} selecionados'),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.download_outlined),
+                  onPressed: _exportarProjetosSelecionados,
+                  tooltip: 'Exportar Selecionados',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: _deletarProjetosSelecionados,
+                  tooltip: 'Apagar Selecionados',
+                ),
+              ],
+            )
+          : AppBar(
+              title: Text(widget.title),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.upload_file_outlined),
+                  onPressed: _importarProjeto,
+                  tooltip: 'Importar Projeto',
+                ),
+              ],
             ),
-          );
-        },
-      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : projetos.isEmpty
+              ? const Center(
+                  child: Text(
+                      'Nenhum projeto encontrado.\nUse o botão + para adicionar um novo.',
+                      textAlign: TextAlign.center))
+              : ListView.builder(
+                  itemCount: projetos.length,
+                  itemBuilder: (context, index) {
+                    final projeto = projetos[index];
+                    final isSelected = _selectedProjetos.contains(projeto.id!);
+
+                    return Card(
+                        color: isSelected ? Colors.lightBlue.shade100 : null,
+                        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        child:
+                           ListTile(
+                            onTap: () {
+                              if (_isSelectionMode) {
+                                _toggleSelection(projeto.id!);
+                              } else {
+                                Navigator.push(context, MaterialPageRoute(builder: (context) => AtividadesPage(projeto: projeto)));
+                              }
+                            },
+                            onLongPress: () {
+                              _toggleSelection(projeto.id!);
+                            },
+                            leading: Icon(
+                                isSelected ? Icons.check_circle : Icons.folder_outlined,
+                                color: Theme.of(context).primaryColor,
+                            ),
+                            title: Text(projeto.nome, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Text('Responsável: ${projeto.responsavel}'),
+                            trailing: Text(DateFormat('dd/MM/yy').format(projeto.dataCriacao)),
+                          ),
+                        );
+                  },
+                ),
+      // 2. LÓGICA DE NAVEGAÇÃO IMPLEMENTADA AQUI
       floatingActionButton: FloatingActionButton(
-        onPressed: _navegarParaNovoProjeto,
-        tooltip: 'Novo Projeto',
+        onPressed: () {
+          // Navega para a página de formulário para criar um novo projeto
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const FormProjetoPage()),
+          ).then((_) {
+            // Após voltar da tela de criação, atualiza a lista de projetos
+            _carregarProjetos();
+          });
+        },
+        tooltip: 'Adicionar Projeto',
         child: const Icon(Icons.add),
       ),
     );

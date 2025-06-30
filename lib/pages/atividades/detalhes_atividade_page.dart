@@ -5,15 +5,12 @@ import 'package:intl/intl.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
 import 'package:geoforestcoletor/models/atividade_model.dart';
 import 'package:geoforestcoletor/models/fazenda_model.dart';
-
-// Importe o formulário de fazenda (o caminho pode variar)
 import 'package:geoforestcoletor/pages/fazenda/form_fazenda_page.dart';
-// Futuramente, importaremos a página de detalhes da fazenda
 import 'package:geoforestcoletor/pages/fazenda/detalhes_fazenda_page.dart';
+import 'package:geoforestcoletor/pages/menu/home_page.dart'; // <<< 1. IMPORTA A HOMEPAGE
 
 class DetalhesAtividadePage extends StatefulWidget {
   final Atividade atividade;
-
   const DetalhesAtividadePage({super.key, required this.atividade});
 
   @override
@@ -24,6 +21,10 @@ class _DetalhesAtividadePageState extends State<DetalhesAtividadePage> {
   late Future<List<Fazenda>> _fazendasFuture;
   final dbHelper = DatabaseHelper.instance;
 
+  // >>> 2. ESTADO PARA CONTROLAR O MODO DE SELEÇÃO <<<
+  bool _isSelectionMode = false;
+  final Set<String> _selectedFazendas = {}; // O ID da fazenda é uma String
+
   @override
   void initState() {
     super.initState();
@@ -31,11 +32,71 @@ class _DetalhesAtividadePageState extends State<DetalhesAtividadePage> {
   }
 
   void _carregarFazendas() {
+    if(mounted) {
+      setState(() {
+        _isSelectionMode = false;
+        _selectedFazendas.clear();
+        _fazendasFuture = dbHelper.getFazendasDaAtividade(widget.atividade.id!);
+      });
+    }
+  }
+
+  // --- MÉTODOS DE SELEÇÃO E EXCLUSÃO ---
+  void _toggleSelectionMode(String? fazendaId) {
     setState(() {
-      _fazendasFuture = dbHelper.getFazendasDaAtividade(widget.atividade.id!);
+      _isSelectionMode = !_isSelectionMode;
+      _selectedFazendas.clear();
+      if (_isSelectionMode && fazendaId != null) {
+        _selectedFazendas.add(fazendaId);
+      }
     });
   }
 
+  void _onItemSelected(String fazendaId) {
+    setState(() {
+      if (_selectedFazendas.contains(fazendaId)) {
+        _selectedFazendas.remove(fazendaId);
+        if (_selectedFazendas.isEmpty) {
+          _isSelectionMode = false;
+        }
+      } else {
+        _selectedFazendas.add(fazendaId);
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedFazendas() async {
+    if (_selectedFazendas.isEmpty) return;
+    
+    final bool? confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmar Exclusão'),
+        content: Text('Tem certeza que deseja apagar as ${_selectedFazendas.length} fazendas selecionadas e todos os seus dados? Esta ação não pode ser desfeita.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Apagar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar == true && mounted) {
+      for (final id in _selectedFazendas) {
+        await dbHelper.deleteFazenda(id, widget.atividade.id!);
+      }
+      
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${_selectedFazendas.length} fazendas apagadas.'),
+          backgroundColor: Colors.green));
+      _carregarFazendas();
+    }
+  }
+
+  // --- MÉTODOS DE NAVEGAÇÃO ---
   void _navegarParaNovaFazenda() async {
     final bool? fazendaCriada = await Navigator.push<bool>(
       context,
@@ -49,56 +110,53 @@ class _DetalhesAtividadePageState extends State<DetalhesAtividadePage> {
   }
 
   void _navegarParaDetalhesFazenda(Fazenda fazenda) {
-    // AINDA NÃO IMPLEMENTADO
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Navegando para os detalhes da fazenda: ${fazenda.nome}')));
-    
-    
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => DetalhesFazendaPage(fazenda: fazenda)),
     ).then((_) => _carregarFazendas());
-    
   }
 
-  Future<void> _deletarFazenda(Fazenda fazenda) async {
-    final bool? confirmar = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar Exclusão'),
-        content: Text(
-            'Tem certeza que deseja apagar a fazenda "${fazenda.nome}" (ID: ${fazenda.id}) e todos os seus talhões e coletas?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Apagar'),
-          ),
-        ],
+  // --- WIDGETS DE CONSTRUÇÃO DA UI ---
+  AppBar _buildSelectionAppBar() {
+    return AppBar(
+      title: Text('${_selectedFazendas.length} selecionada(s)'),
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        onPressed: () => _toggleSelectionMode(null),
       ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.delete_outline),
+          tooltip: 'Apagar selecionadas',
+          onPressed: _deleteSelectedFazendas,
+        ),
+      ],
     );
-
-    if (confirmar == true && mounted) {
-      // <<< ALTERADO: Passando os dois parâmetros para o delete
-      await dbHelper.deleteFazenda(fazenda.id, fazenda.atividadeId);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Fazenda "${fazenda.nome}" apagada.'),
-          backgroundColor: Colors.green));
-      _carregarFazendas();
-    }
+  }
+  
+  AppBar _buildNormalAppBar() {
+    return AppBar(
+      title: Text(widget.atividade.tipo),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.home_outlined),
+          tooltip: 'Voltar para o Início',
+          onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const HomePage(title: 'Geo Forest Analytics')),
+            (Route<dynamic> route) => false,
+          ),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.atividade.tipo),
-      ),
+      appBar: _isSelectionMode ? _buildSelectionAppBar() : _buildNormalAppBar(),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Card com informações da Atividade
           Card(
             margin: const EdgeInsets.all(12.0),
             elevation: 2,
@@ -127,7 +185,6 @@ class _DetalhesAtividadePageState extends State<DetalhesAtividadePage> {
             ),
           ),
 
-          // Lista de Fazendas
           Expanded(
             child: FutureBuilder<List<Fazenda>>(
               future: _fazendasFuture,
@@ -136,8 +193,7 @@ class _DetalhesAtividadePageState extends State<DetalhesAtividadePage> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  return Center(
-                      child: Text('Erro ao carregar fazendas: ${snapshot.error}'));
+                  return Center(child: Text('Erro ao carregar fazendas: ${snapshot.error}'));
                 }
 
                 final fazendas = snapshot.data ?? [];
@@ -160,21 +216,37 @@ class _DetalhesAtividadePageState extends State<DetalhesAtividadePage> {
                   itemCount: fazendas.length,
                   itemBuilder: (context, index) {
                     final fazenda = fazendas[index];
+                    final isSelected = _selectedFazendas.contains(fazenda.id);
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      color: isSelected ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5) : null,
                       child: ListTile(
-                        leading: const CircleAvatar(
-                          child: Icon(Icons.agriculture_outlined),
+                        onTap: () {
+                          if (_isSelectionMode) {
+                            _onItemSelected(fazenda.id);
+                          } else {
+                            _navegarParaDetalhesFazenda(fazenda);
+                          }
+                        },
+                        onLongPress: () {
+                          if (!_isSelectionMode) {
+                            _toggleSelectionMode(fazenda.id);
+                          }
+                        },
+                        leading: CircleAvatar(
+                          backgroundColor: isSelected ? Theme.of(context).colorScheme.primary : null,
+                          child: Icon(isSelected ? Icons.check : Icons.agriculture_outlined),
                         ),
-                        // <<< ALTERADO: Mostrando o ID da fazenda no subtítulo
-                        title: Text(fazenda.nome,
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                        title: Text(fazenda.nome, style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text('ID: ${fazenda.id}\n${fazenda.municipio} - ${fazenda.estado}'),
-                        trailing: IconButton(
+                        trailing: _isSelectionMode ? null : IconButton(
                           icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          onPressed: () => _deletarFazenda(fazenda),
+                          onPressed: () async {
+                            _toggleSelectionMode(fazenda.id);
+                            await _deleteSelectedFazendas();
+                          },
                         ),
-                        onTap: () => _navegarParaDetalhesFazenda(fazenda),
+                        selected: isSelected,
                       ),
                     );
                   },
@@ -184,7 +256,7 @@ class _DetalhesAtividadePageState extends State<DetalhesAtividadePage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: _isSelectionMode ? null : FloatingActionButton.extended(
         onPressed: _navegarParaNovaFazenda,
         tooltip: 'Nova Fazenda',
         icon: const Icon(Icons.add_business_outlined),

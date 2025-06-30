@@ -1,6 +1,6 @@
 // lib/models/projeto_model.dart
 
-class Projeto {
+class Projeto { // A palavra "copyWith" foi removida daqui
   final int? id;
   final String nome;
   final String empresa;
@@ -14,6 +14,23 @@ class Projeto {
     required this.responsavel,
     required this.dataCriacao,
   });
+
+  // >>> MÉTODO CORRIGIDO E ADICIONADO AQUI <<<
+  Projeto copyWith({
+    int? id,
+    String? nome,
+    String? empresa,
+    String? responsavel,
+    DateTime? dataCriacao,
+  }) {
+    return Projeto(
+      id: id ?? this.id,
+      nome: nome ?? this.nome,
+      empresa: empresa ?? this.empresa,
+      responsavel: responsavel ?? this.responsavel,
+      dataCriacao: dataCriacao ?? this.dataCriacao,
+    );
+  }
 
   Map<String, dynamic> toMap() {
     return {

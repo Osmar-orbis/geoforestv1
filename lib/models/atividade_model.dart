@@ -29,6 +29,24 @@ class Atividade {
     required this.dataCriacao,
   });
 
+  // >>> MÉTODO ADICIONADO AQUI <<<
+  Atividade copyWith({
+    int? id,
+    int? projetoId,
+    String? tipo,
+    String? descricao,
+    DateTime? dataCriacao,
+  }) {
+    return Atividade(
+      id: id ?? this.id,
+      projetoId: projetoId ?? this.projetoId,
+      tipo: tipo ?? this.tipo,
+      descricao: descricao ?? this.descricao,
+      dataCriacao: dataCriacao ?? this.dataCriacao,
+    );
+  }
+
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,

@@ -4,14 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
 import 'package:geoforestcoletor/models/fazenda_model.dart';
 import 'package:geoforestcoletor/models/talhao_model.dart';
-
-// Futuramente, importaremos o formulário e a página de detalhes do talhão
 import 'package:geoforestcoletor/pages/talhoes/form_talhao_page.dart';
 import 'package:geoforestcoletor/pages/talhoes/detalhes_talhao_page.dart';
+import 'package:geoforestcoletor/pages/menu/home_page.dart'; // <<< 1. IMPORTA A HOMEPAGE
 
 class DetalhesFazendaPage extends StatefulWidget {
   final Fazenda fazenda;
-
   const DetalhesFazendaPage({super.key, required this.fazenda});
 
   @override
@@ -22,6 +20,10 @@ class _DetalhesFazendaPageState extends State<DetalhesFazendaPage> {
   late Future<List<Talhao>> _talhoesFuture;
   final dbHelper = DatabaseHelper.instance;
 
+  // >>> 2. ESTADO PARA CONTROLAR O MODO DE SELEÇÃO <<<
+  bool _isSelectionMode = false;
+  final Set<int> _selectedTalhoes = {};
+
   @override
   void initState() {
     super.initState();
@@ -29,48 +31,47 @@ class _DetalhesFazendaPageState extends State<DetalhesFazendaPage> {
   }
 
   void _carregarTalhoes() {
+    if(mounted) {
+      setState(() {
+        _isSelectionMode = false;
+        _selectedTalhoes.clear();
+        _talhoesFuture = dbHelper.getTalhoesDaFazenda(widget.fazenda.id, widget.fazenda.atividadeId);
+      });
+    }
+  }
+
+  // --- MÉTODOS DE SELEÇÃO E EXCLUSÃO ---
+  void _toggleSelectionMode(int? talhaoId) {
     setState(() {
-      _talhoesFuture = dbHelper.getTalhoesDaFazenda(widget.fazenda.id, widget.fazenda.atividadeId);
+      _isSelectionMode = !_isSelectionMode;
+      _selectedTalhoes.clear();
+      if (_isSelectionMode && talhaoId != null) {
+        _selectedTalhoes.add(talhaoId);
+      }
     });
   }
 
-  void _navegarParaNovoTalhao() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Funcionalidade "Novo Talhão" a ser implementada.')));
-
-      final bool? talhaoCriado = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => FormTalhaoPage(
-          fazendaId: widget.fazenda.id,
-          fazendaAtividadeId: widget.fazenda.atividadeId,
-        ),
-      ),
-    );
-    if (talhaoCriado == true && mounted) {
-      _carregarTalhoes();
-    }
-    
-  }
-  
-  void _navegarParaDetalhesTalhao(Talhao talhao) {
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Navegando para os detalhes do talhão: ${talhao.nome}')));
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => DetalhesTalhaoPage(talhao: talhao)),
-    ).then((_) => _carregarTalhoes());
-    
+  void _onItemSelected(int talhaoId) {
+    setState(() {
+      if (_selectedTalhoes.contains(talhaoId)) {
+        _selectedTalhoes.remove(talhaoId);
+        if (_selectedTalhoes.isEmpty) {
+          _isSelectionMode = false;
+        }
+      } else {
+        _selectedTalhoes.add(talhaoId);
+      }
+    });
   }
 
-  Future<void> _deletarTalhao(Talhao talhao) async {
+  Future<void> _deleteSelectedTalhoes() async {
+    if (_selectedTalhoes.isEmpty) return;
+    
     final bool? confirmar = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar Exclusão'),
-        content: Text(
-            'Tem certeza que deseja apagar o talhão "${talhao.nome}" e todas as suas coletas de parcela e cubagem?'),
+        content: Text('Tem certeza que deseja apagar os ${_selectedTalhoes.length} talhões selecionados e todos os seus dados? Esta ação não pode ser desfeita.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
           FilledButton(
@@ -83,21 +84,80 @@ class _DetalhesFazendaPageState extends State<DetalhesFazendaPage> {
     );
 
     if (confirmar == true && mounted) {
-      await dbHelper.deleteTalhao(talhao.id!);
+      // O deleteTalhao já apaga em cascata (parcelas, etc.)
+      for (final id in _selectedTalhoes) {
+        await dbHelper.deleteTalhao(id);
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Talhão "${talhao.nome}" apagado.'),
+          content: Text('${_selectedTalhoes.length} talhões apagados.'),
           backgroundColor: Colors.green));
-      _carregarTalhoes();
+      _carregarTalhoes(); // Recarrega a lista e sai do modo de seleção
     }
   }
 
+  // --- MÉTODOS DE NAVEGAÇÃO ---
+  void _navegarParaNovoTalhao() async {
+    final bool? talhaoCriado = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FormTalhaoPage(
+          fazendaId: widget.fazenda.id,
+          fazendaAtividadeId: widget.fazenda.atividadeId,
+        ),
+      ),
+    );
+    if (talhaoCriado == true && mounted) {
+      _carregarTalhoes();
+    }
+  }
+  
+  void _navegarParaDetalhesTalhao(Talhao talhao) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => DetalhesTalhaoPage(talhao: talhao)),
+    ).then((_) => _carregarTalhoes());
+  }
+
+  // --- WIDGETS DE CONSTRUÇÃO DA UI ---
+  AppBar _buildSelectionAppBar() {
+    return AppBar(
+      title: Text('${_selectedTalhoes.length} selecionado(s)'),
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        onPressed: () => _toggleSelectionMode(null),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.delete_outline),
+          tooltip: 'Apagar selecionados',
+          onPressed: _deleteSelectedTalhoes,
+        ),
+      ],
+    );
+  }
+  
+  AppBar _buildNormalAppBar() {
+    return AppBar(
+      title: Text(widget.fazenda.nome),
+      actions: [
+        // >>> 3. BOTÃO DE HOME ADICIONADO <<<
+        IconButton(
+          icon: const Icon(Icons.home_outlined),
+          tooltip: 'Voltar para o Início',
+          onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const HomePage(title: 'Geo Forest Analytics')),
+            (Route<dynamic> route) => false,
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.fazenda.nome),
-      ),
+      appBar: _isSelectionMode ? _buildSelectionAppBar() : _buildNormalAppBar(),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -158,19 +218,40 @@ class _DetalhesFazendaPageState extends State<DetalhesFazendaPage> {
                   itemCount: talhoes.length,
                   itemBuilder: (context, index) {
                     final talhao = talhoes[index];
+                    final isSelected = _selectedTalhoes.contains(talhao.id!);
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      // >>> 4. MUDANÇA DE COR QUANDO SELECIONADO <<<
+                      color: isSelected ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5) : null,
                       child: ListTile(
-                        leading: const CircleAvatar(
-                          child: Icon(Icons.park_outlined),
+                        // >>> 5. NOVA LÓGICA DE onTAP e onLongPress <<<
+                        onTap: () {
+                          if (_isSelectionMode) {
+                            _onItemSelected(talhao.id!);
+                          } else {
+                            _navegarParaDetalhesTalhao(talhao);
+                          }
+                        },
+                        onLongPress: () {
+                          if (!_isSelectionMode) {
+                            _toggleSelectionMode(talhao.id!);
+                          }
+                        },
+                        leading: CircleAvatar(
+                          backgroundColor: isSelected ? Theme.of(context).colorScheme.primary : null,
+                          child: Icon(isSelected ? Icons.check : Icons.park_outlined),
                         ),
                         title: Text(talhao.nome, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('Área: ${talhao.areaHa ?? 'N/A'} ha - Espécie: ${talhao.especie ?? 'N/A'}'),
-                         trailing: IconButton(
+                        subtitle: Text('Área: ${talhao.areaHa?.toStringAsFixed(2) ?? 'N/A'} ha - Espécie: ${talhao.especie ?? 'N/A'}'),
+                        // Remove o botão de lixeira individual quando em modo de seleção
+                        trailing: _isSelectionMode ? null : IconButton(
                           icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          onPressed: () => _deletarTalhao(talhao),
+                          onPressed: () async {
+                             _toggleSelectionMode(talhao.id!);
+                             await _deleteSelectedTalhoes();
+                          }
                         ),
-                        onTap: () => _navegarParaDetalhesTalhao(talhao),
+                        selected: isSelected,
                       ),
                     );
                   },
@@ -180,7 +261,8 @@ class _DetalhesFazendaPageState extends State<DetalhesFazendaPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      // >>> 6. ESCONDE O BOTÃO FLUTUANTE NO MODO DE SELEÇÃO <<<
+      floatingActionButton: _isSelectionMode ? null : FloatingActionButton.extended(
         onPressed: _navegarParaNovoTalhao,
         tooltip: 'Novo Talhão',
         icon: const Icon(Icons.add_chart),

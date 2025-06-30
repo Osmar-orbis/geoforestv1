@@ -97,7 +97,7 @@ class MyApp extends StatelessWidget {
           // As outras rotas permanecem as mesmas
           '/equipe': (context) => const EquipePage(),
           '/home': (context) => const HomePage(title: 'Geo Forest Analytics'),
-          '/lista_projetos': (context) => const ListaProjetosPage(),
+          '/lista_projetos': (context) => const ListaProjetosPage(title: 'Meus Projetos'),
         },
         navigatorObservers: [RouteObserver<PageRoute>()],
         builder: (context, child) {

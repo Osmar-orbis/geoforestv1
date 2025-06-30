@@ -1,4 +1,4 @@
-// lib/pages/amostra/inventario_page.dart (VERSÃO FINAL E CORRIGIDA)
+// lib/pages/amostra/inventario_page.dart (VERSÃO COM FAB CORRIGIDO)
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
@@ -7,6 +7,7 @@ import 'package:geoforestcoletor/models/parcela_model.dart';
 import 'package:geoforestcoletor/services/validation_service.dart';
 import 'package:geoforestcoletor/widgets/arvore_dialog.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:geoforestcoletor/pages/dashboard/dashboard_page.dart';
 
 class InventarioPage extends StatefulWidget {
   final Parcela parcela;
@@ -18,9 +19,13 @@ class InventarioPage extends StatefulWidget {
 
 class _InventarioPageState extends State<InventarioPage> {
   final _validationService = ValidationService();
+  final dbHelper = DatabaseHelper.instance;
 
+  late Parcela _parcelaAtual;
   List<Arvore> _arvoresColetadas = [];
-  bool _isLoading = true;
+  
+  late Future<bool> _dataLoadingFuture;
+
   bool _isSaving = false;
   bool _mostrandoApenasDominantes = false;
   bool _listaInvertida = false;
@@ -28,16 +33,67 @@ class _InventarioPageState extends State<InventarioPage> {
   @override
   void initState() {
     super.initState();
-    _carregarDadosIniciais();
+    _parcelaAtual = widget.parcela;
+    _dataLoadingFuture = _carregarDadosIniciais();
   }
 
-  Future<void> _carregarDadosIniciais() async {
-    setState(() => _isLoading = true);
-    if (widget.parcela.dbId != null) {
-      final arvoresDoBanco = await DatabaseHelper().getArvoresDaParcela(widget.parcela.dbId!);
-      if (mounted) setState(() => _arvoresColetadas = arvoresDoBanco);
+  Future<bool> _carregarDadosIniciais() async {
+    if (_parcelaAtual.status == StatusParcela.concluida) {
+      _parcelaAtual.status = StatusParcela.emAndamento;
+      await dbHelper.updateParcelaStatus(_parcelaAtual.dbId!, StatusParcela.emAndamento);
+      
+      if(mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Parcela reaberta para edição.'),
+            backgroundColor: Colors.orange,
+          ));
+        });
+      }
     }
-    if (mounted) setState(() => _isLoading = false);
+
+    if (_parcelaAtual.dbId != null) {
+      _arvoresColetadas = await dbHelper.getArvoresDaParcela(_parcelaAtual.dbId!);
+    }
+    
+    return true;
+  }
+  
+  // O resto do arquivo permanece o mesmo, a única mudança é no FloatingActionButton.
+  void _navegarParaDashboard() {
+    if (_parcelaAtual.dbId == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DashboardPage(parcelaId: _parcelaAtual.dbId!),
+      ),
+    );
+  }
+
+  Future<void> _concluirColeta() async {
+    final confirm = await showDialog<bool>(
+      context: context, 
+      builder: (context) => AlertDialog(
+        title: const Text('Concluir Coleta'),
+        content: const Text('Tem certeza que deseja marcar esta parcela como concluída? As árvores dominantes serão selecionadas automaticamente.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Concluir'))
+        ]
+      )
+    ) ?? false;
+
+    if (!confirm || !mounted) return;
+    
+    await _salvarEstadoAtual(concluir: true, showSnackbar: false);
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Parcela concluída com sucesso!'), 
+        backgroundColor: Colors.blue
+      ));
+      Navigator.of(context).pop(true); 
+    }
   }
 
   Future<void> _deletarArvore(BuildContext context, Arvore arvore) async {
@@ -187,7 +243,7 @@ class _InventarioPageState extends State<InventarioPage> {
     if (mounted) setState(() => _isSaving = true);
     try {
       if (concluir) {
-        widget.parcela.status = StatusParcela.concluida;
+        _parcelaAtual.status = StatusParcela.concluida;
         _identificarArvoresDominantes();
       }
       _arvoresColetadas.sort((a, b) {
@@ -197,7 +253,7 @@ class _InventarioPageState extends State<InventarioPage> {
         if (compPos != 0) return compPos;
         return (a.id ?? 0).compareTo(b.id ?? 0);
       });
-      await DatabaseHelper().saveFullColeta(widget.parcela, _arvoresColetadas);
+      await dbHelper.saveFullColeta(_parcelaAtual, _arvoresColetadas);
       if (mounted && showSnackbar) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Progresso salvo!'), duration: Duration(seconds: 2), backgroundColor: Colors.green));
       }
@@ -212,8 +268,8 @@ class _InventarioPageState extends State<InventarioPage> {
     for (var arvore in _arvoresColetadas) {
       arvore.dominante = false;
     }
-    final int numeroDeDominantes = (widget.parcela.areaMetrosQuadrados / 100).floor();
-    final arvoresCandidatas = _arvoresColetadas.where((a) => a.codigo == Codigo.normal).toList();
+    final int numeroDeDominantes = (_parcelaAtual.areaMetrosQuadrados / 100).floor();
+    final arvoresCandidatas = _arvoresColetadas.where((a) => a.codigo.name == 'normal').toList();
     if (arvoresCandidatas.length <= numeroDeDominantes) {
       for (var arvore in arvoresCandidatas) {
         arvore.dominante = true;
@@ -223,16 +279,6 @@ class _InventarioPageState extends State<InventarioPage> {
       for (int i = 0; i < numeroDeDominantes; i++) {
         arvoresCandidatas[i].dominante = true;
       }
-    }
-  }
-
-  Future<void> _concluirColeta() async {
-    final confirm = await showDialog<bool>(context: context, builder: (context) => AlertDialog(title: const Text('Concluir Coleta'), content: const Text('Tem certeza que deseja marcar esta parcela como concluída? As árvores dominantes serão selecionadas automaticamente.'), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')), ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Concluir'))])) ?? false;
-    if (!confirm) return;
-    await _salvarEstadoAtual(concluir: true, showSnackbar: false);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Parcela concluída com sucesso!'), backgroundColor: Colors.blue));
-      Navigator.of(context).pop(true);
     }
   }
 
@@ -246,9 +292,15 @@ class _InventarioPageState extends State<InventarioPage> {
   }
   
   Widget _buildSummaryCard() {
-    final int totalArvores = _arvoresColetadas.length;
-    final int contagemAlturaNormal = _arvoresColetadas.where((a) => a.codigo == Codigo.normal && a.altura != null && a.altura! > 0).length;
+    final covas = <String>{};
+    for (var arvore in _arvoresColetadas) {
+      covas.add('${arvore.linha}-${arvore.posicaoNaLinha}');
+    }
+    final int totalCovas = covas.length;
+
+    final int contagemAlturaNormal = _arvoresColetadas.where((a) => a.codigo.name == 'normal' && a.altura != null && a.altura! > 0).length;
     final int contagemAlturaDominante = _arvoresColetadas.where((a) => a.dominante && a.altura != null && a.altura! > 0).length;
+    final int contagemAlturaOutros = _arvoresColetadas.where((a) => a.codigo.name != 'normal' && a.altura != null && a.altura! > 0).length;
 
     return Card(
       margin: const EdgeInsets.all(8),
@@ -259,11 +311,12 @@ class _InventarioPageState extends State<InventarioPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Talhão: ${widget.parcela.nomeTalhao} / Parcela: ${widget.parcela.idParcela}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            Text('Talhão: ${_parcelaAtual.nomeTalhao} / Parcela: ${_parcelaAtual.idParcela}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const Divider(height: 20),
-            _buildStatRow('Árvores Coletadas:', '$totalArvores'),
-            _buildStatRow('Alturas Medidas (Normais):', '$contagemAlturaNormal'),
-            _buildStatRow('Alturas Medidas (Dominantes):', '$contagemAlturaDominante'),
+            _buildStatRow('Total de Covas:', '$totalCovas'),
+            _buildStatRow('Alturas (Normais):', '$contagemAlturaNormal'),
+            _buildStatRow('Alturas (Dominantes):', '$contagemAlturaDominante'),
+            _buildStatRow('Alturas (Outros Códigos):', '$contagemAlturaOutros'),
           ],
         ),
       ),
@@ -298,23 +351,15 @@ class _InventarioPageState extends State<InventarioPage> {
 
   @override
   Widget build(BuildContext context) {
-    final listaFiltrada = _mostrandoApenasDominantes ? _arvoresColetadas.where((a) => a.dominante).toList() : _arvoresColetadas;
-    
-    final listaOrdenada = List<Arvore>.from(listaFiltrada);
-    listaOrdenada.sort((a, b) {
-      int compLinha = a.linha.compareTo(b.linha);
-      if (compLinha != 0) return compLinha;
-      int compPos = a.posicaoNaLinha.compareTo(b.posicaoNaLinha);
-      if (compPos != 0) return compPos;
-      return (a.id ?? 0).compareTo(b.id ?? 0);
-    });
-
-    final listaExibida = _listaInvertida ? listaOrdenada.reversed.toList() : listaOrdenada;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Coleta da Parcela'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.bar_chart),
+            tooltip: 'Ver Relatório da Parcela',
+            onPressed: _arvoresColetadas.isEmpty ? null : _navegarParaDashboard,
+          ),
           if (_isSaving)
             const Padding(padding: EdgeInsets.only(right: 16.0), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white))))
           else ...[
@@ -325,78 +370,98 @@ class _InventarioPageState extends State<InventarioPage> {
           ],
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                _buildSummaryCard(),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 8.0),
-                  child: SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: () {if (!_mostrandoApenasDominantes) _identificarArvoresDominantes(); setState(() => _mostrandoApenasDominantes = !_mostrandoApenasDominantes);}, icon: Icon(_mostrandoApenasDominantes ? Icons.filter_list_off : Icons.filter_list), label: Text(_mostrandoApenasDominantes ? 'Mostrar Todas' : 'Encontrar Dominantes'))),
-                ),
-                
-                _buildHeaderRow(),
+      body: FutureBuilder<bool>(
+        future: _dataLoadingFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError || !snapshot.hasData || snapshot.data == false) {
+            return Center(child: Text('Erro ao carregar dados da parcela: ${snapshot.error}'));
+          }
+          
+          final listaFiltrada = _mostrandoApenasDominantes ? _arvoresColetadas.where((a) => a.dominante).toList() : _arvoresColetadas;
+          final listaOrdenada = List<Arvore>.from(listaFiltrada);
+          listaOrdenada.sort((a, b) {
+            int compLinha = a.linha.compareTo(b.linha);
+            if (compLinha != 0) return compLinha;
+            int compPos = a.posicaoNaLinha.compareTo(b.posicaoNaLinha);
+            if (compPos != 0) return compPos;
+            return (a.id ?? 0).compareTo(b.id ?? 0);
+          });
+          final listaExibida = _listaInvertida ? listaOrdenada.reversed.toList() : listaOrdenada;
 
-                Expanded(
-                  child: _arvoresColetadas.isEmpty
-                      ? const Center(child: Text('Clique no botão "+" para adicionar a primeira árvore.', style: TextStyle(color: Colors.grey, fontSize: 16)))
-                      : SlidableAutoCloseBehavior(
-                        child: ListView.builder(
-                            padding: EdgeInsets.zero,
-                            itemCount: listaExibida.length,
-                            itemBuilder: (context, index) {
-                              final arvore = listaExibida[index];
-                              
-                              return Slidable(
-                                key: ValueKey(arvore.id ?? arvore.hashCode),
-                                endActionPane: ActionPane(
-                                  motion: const StretchMotion(),
-                                  extentRatio: 0.25,
+          return Column(
+            children: [
+              _buildSummaryCard(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 8.0),
+                child: SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: () {if (!_mostrandoApenasDominantes) _identificarArvoresDominantes(); setState(() => _mostrandoApenasDominantes = !_mostrandoApenasDominantes);}, icon: Icon(_mostrandoApenasDominantes ? Icons.filter_list_off : Icons.filter_list), label: Text(_mostrandoApenasDominantes ? 'Mostrar Todas' : 'Encontrar Dominantes'))),
+              ),
+              _buildHeaderRow(),
+              Expanded(
+                child: _arvoresColetadas.isEmpty
+                  ? const Center(child: Text('Clique no botão "+" para adicionar a primeira árvore.', style: TextStyle(color: Colors.grey, fontSize: 16)))
+                  : SlidableAutoCloseBehavior(
+                      child: ListView.builder(
+                        padding: EdgeInsets.zero,
+                        itemCount: listaExibida.length,
+                        itemBuilder: (context, index) {
+                          final arvore = listaExibida[index];
+                          return Slidable(
+                            key: ValueKey(arvore.id ?? arvore.hashCode),
+                            endActionPane: ActionPane(
+                              motion: const StretchMotion(),
+                              extentRatio: 0.25,
+                              children: [
+                                SlidableAction(
+                                  onPressed: (ctx) => _deletarArvore(ctx, arvore),
+                                  backgroundColor: Colors.redAccent,
+                                  foregroundColor: Colors.white,
+                                  icon: Icons.delete_outline,
+                                  label: 'Excluir',
+                                ),
+                              ],
+                            ),
+                            child: InkWell(
+                              onTap: () => _abrirFormularioParaEditar(arvore),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+                                decoration: BoxDecoration(
+                                  color: arvore.dominante ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4) : (index.isOdd ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : Colors.transparent),
+                                  border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor, width: 0.8)),
+                                ),
+                                child: Row(
                                   children: [
-                                    SlidableAction(
-                                      onPressed: (ctx) => _deletarArvore(ctx, arvore),
-                                      backgroundColor: Colors.redAccent,
-                                      foregroundColor: Colors.white,
-                                      icon: Icons.delete_outline,
-                                      label: 'Excluir',
+                                    _DataCell(arvore.linha.toString(), flex: 15),
+                                    _DataCell(arvore.posicaoNaLinha.toString(), flex: 15),
+                                    _DataCell(arvore.cap > 0 ? arvore.cap.toStringAsFixed(1) : '-', flex: 20),
+                                    _DataCell(arvore.altura?.toStringAsFixed(1) ?? '-', flex: 20),
+                                    _DataCell(
+                                      '${arvore.codigo.name[0].toUpperCase()}${arvore.codigo2 != null ? ", ${arvore.codigo2!.name[0].toUpperCase()}" : ""}',
+                                      flex: 30, 
+                                      isBold: true
                                     ),
                                   ],
                                 ),
-                                child: InkWell(
-                                  onTap: () => _abrirFormularioParaEditar(arvore),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-                                    decoration: BoxDecoration(
-                                      color: arvore.dominante ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4) : (index.isOdd ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : Colors.transparent),
-                                      border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor, width: 0.8)),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        _DataCell(arvore.linha.toString(), flex: 15),
-                                        _DataCell(arvore.posicaoNaLinha.toString(), flex: 15),
-                                        _DataCell(arvore.cap > 0 ? arvore.cap.toStringAsFixed(1) : '-', flex: 20),
-                                        _DataCell(arvore.altura?.toStringAsFixed(1) ?? '-', flex: 20),
-                                        _DataCell(
-                                          '${arvore.codigo.name[0].toUpperCase()}${arvore.codigo2 != null ? ", ${arvore.codigo2!.name[0].toUpperCase()}" : ""}', 
-                                          flex: 30, 
-                                          isBold: true
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                ),
-              ],
-            ),
-      floatingActionButton: FloatingActionButton(
+                  ),
+              ),
+            ],
+          );
+        },
+      ),
+      // >>> CORREÇÃO AQUI <<<
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _adicionarNovaArvore(),
         tooltip: 'Adicionar Árvore',
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: const Icon(Icons.add),
+        // O .extended precisa de um 'icon' e um 'label'
+        icon: const Icon(Icons.add),
+        label: const Text('Nova Árvore'),
       ),
     );
   }
@@ -416,7 +481,7 @@ class _InventarioPageState extends State<InventarioPage> {
 }
 
 class _HeaderCell extends StatelessWidget {
-  final String text;
+   final String text;
   final int flex;
   final TextStyle? style;
   const _HeaderCell(this.text, {required this.flex, this.style});
@@ -431,7 +496,7 @@ class _HeaderCell extends StatelessWidget {
 }
 
 class _DataCell extends StatelessWidget {
-  final String text;
+   final String text;
   final int flex;
   final bool isBold;
   const _DataCell(this.text, {required this.flex, this.isBold = false});

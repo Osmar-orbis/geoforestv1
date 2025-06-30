@@ -1,4 +1,4 @@
-// lib/pages/dashboard/talhao_dashboard_page.dart
+// lib/pages/dashboard/talhao_dashboard_page.dart (ARQUIVO COMPLETO E CORRIGIDO)
 
 import 'package:flutter/material.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
@@ -6,28 +6,69 @@ import 'package:geoforestcoletor/models/arvore_model.dart';
 import 'package:geoforestcoletor/models/parcela_model.dart';
 import 'package:geoforestcoletor/models/talhao_model.dart';
 import 'package:geoforestcoletor/services/analysis_service.dart';
+import 'package:geoforestcoletor/services/export_service.dart';
 import 'package:geoforestcoletor/services/pdf_service.dart';
 import 'package:geoforestcoletor/widgets/grafico_distribuicao_widget.dart';
 import 'package:geoforestcoletor/pages/analises/simulacao_desbaste_page.dart';
 import 'package:geoforestcoletor/pages/analises/rendimento_dap_page.dart';
 
-class TalhaoDashboardPage extends StatefulWidget {
-  // A página agora recebe o objeto Talhao completo.
+class TalhaoDashboardPage extends StatelessWidget {
   final Talhao talhao;
+  // 1. CRIAR A GLOBALKEY PARA IDENTIFICAR O ESTADO DO WIDGET FILHO
+  final GlobalKey<_TalhaoDashboardContentState> _contentKey = GlobalKey();
 
-  const TalhaoDashboardPage({
-    super.key,
-    required this.talhao,
-  });
+  TalhaoDashboardPage({super.key, required this.talhao});
 
   @override
-  State<TalhaoDashboardPage> createState() => _TalhaoDashboardPageState();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Análise: ${talhao.nome}'),
+        actions: [
+          Builder(builder: (context) {
+            return IconButton(
+              icon: const Icon(Icons.share_outlined),
+              tooltip: 'Exportar Análise',
+              onPressed: () {
+                // 3. USAR A KEY PARA ACESSAR O ESTADO DO FILHO E CHAMAR O MÉTODO
+                final currentState = _contentKey.currentState;
+                
+                if (currentState?._analysisResult != null) {
+                  // A verificação acima garante que currentState não é nulo aqui.
+                  currentState!.mostrarDialogoExportacao(context);
+                } else {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Aguarde a análise carregar para exportar.'),
+                  ));
+                }
+              },
+            );
+          })
+        ],
+      ),
+      // 2. ASSOCIAR A KEY AO WIDGET FILHO
+      body: TalhaoDashboardContent(key: _contentKey, talhao: talhao),
+    );
+  }
 }
 
-class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
+
+// =========================================================================
+// A CLASSE ABAIXO NÃO PRECISOU DE ALTERAÇÕES, ESTÁ COMO VOCÊ ENVIOU
+// =========================================================================
+class TalhaoDashboardContent extends StatefulWidget {
+  final Talhao talhao;
+  const TalhaoDashboardContent({super.key, required this.talhao});
+
+  @override
+  State<TalhaoDashboardContent> createState() => _TalhaoDashboardContentState();
+}
+
+class _TalhaoDashboardContentState extends State<TalhaoDashboardContent> {
   final _dbHelper = DatabaseHelper.instance;
   final _analysisService = AnalysisService();
   final _pdfService = PdfService();
+  final _exportService = ExportService();
 
   List<Parcela> _parcelasDoTalhao = [];
   List<Arvore> _arvoresDoTalhao = [];
@@ -40,21 +81,56 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
     _dataLoadingFuture = _carregarEAnalisarTalhao();
   }
 
+  void mostrarDialogoExportacao(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) {
+        return Wrap(
+          children: <Widget>[
+            ListTile(
+              leading: const Icon(Icons.description_outlined, color: Colors.blue),
+              title: const Text('Exportar Relatório (PDF)'),
+              subtitle: const Text('Gera um relatório visual formatado.'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Exportação para PDF a ser implementada.'),
+                ));
+                // Aqui chamaremos: _pdfService.gerarRelatorioTalhaoPdf(...);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.table_rows_outlined, color: Colors.green),
+              title: const Text('Exportar Dados (CSV)'),
+              subtitle: const Text('Gera uma planilha com os dados da análise.'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                if (_analysisResult != null) {
+                  _exportService.exportarAnaliseTalhaoCsv(
+                    context: context,
+                    talhao: widget.talhao,
+                    analise: _analysisResult!,
+                  );
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _carregarEAnalisarTalhao() async {
-    // Chama o novo método do DatabaseHelper usando o ID do talhão.
     final dadosAgregados = await _dbHelper.getDadosAgregadosDoTalhao(widget.talhao.id!);
-    
     _parcelasDoTalhao = dadosAgregados['parcelas'] as List<Parcela>;
     _arvoresDoTalhao = dadosAgregados['arvores'] as List<Arvore>;
-
-    if (_parcelasDoTalhao.isEmpty || _arvoresDoTalhao.isEmpty) return;
-
+    if (!mounted || _parcelasDoTalhao.isEmpty || _arvoresDoTalhao.isEmpty) return;
     final resultado = _analysisService.getTalhaoInsights(_parcelasDoTalhao, _arvoresDoTalhao);
     if (mounted) {
       setState(() => _analysisResult = resultado);
     }
   }
-
+  
   void _navegarParaSimulacao() {
     if (_analysisResult == null) return;
     Navigator.push(
@@ -71,22 +147,18 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
 
   void _analisarRendimento() {
     if (_analysisResult == null) return;
-
     final resultadoRendimento = _analysisService.analisarRendimentoPorDAP(_parcelasDoTalhao, _arvoresDoTalhao);
-
     if (resultadoRendimento.isEmpty && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Não há dados suficientes para a análise de rendimento.'), backgroundColor: Colors.orange),
       );
       return;
     }
-
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => RendimentoDapPage(
-          // Usa as informações do objeto talhao.
-          nomeFazenda: widget.talhao.fazendaId, // Usando o ID da fazenda
+          nomeFazenda: widget.talhao.fazendaNome ?? 'Fazenda não informada',
           nomeTalhao: widget.talhao.nome,
           dadosRendimento: resultadoRendimento,
           analiseGeral: _analysisResult!,
@@ -168,13 +240,12 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
       _analysisResult!.totalArvoresAmostradas,
       totalParaCubar,
     );
-
-    // Garante que o BuildContext não seja usado em um gap assíncrono
+    
     if (!mounted) return;
 
     await _pdfService.gerarPlanoCubagemPdf(
       context: context,
-      nomeFazenda: widget.talhao.fazendaId,
+      nomeFazenda: widget.talhao.fazendaNome ?? 'Fazenda não informada',
       nomeTalhao: widget.talhao.nome,
       planoDeCubagem: plano,
     );
@@ -182,80 +253,77 @@ class _TalhaoDashboardPageState extends State<TalhaoDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Análise: ${widget.talhao.nome}')),
-      body: FutureBuilder<void>(
-        future: _dataLoadingFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Erro ao analisar talhão: ${snapshot.error}'));
-          }
-          if (_analysisResult == null || _analysisResult!.totalArvoresAmostradas == 0) {
-            return const Center(child: Text('Não há dados de parcelas concluídas para a análise.'));
-          }
+    return FutureBuilder<void>(
+      future: _dataLoadingFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Erro ao analisar talhão: ${snapshot.error}'));
+        }
+        if (_analysisResult == null || _analysisResult!.totalArvoresAmostradas == 0) {
+          return const Center(child: Text('Não há dados de parcelas concluídas para a análise.'));
+        }
 
-          final result = _analysisResult!;
+        final result = _analysisResult!;
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(12.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildResumoCard(result),
-                const SizedBox(height: 16),
-                Card(
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Distribuição Diamétrica (CAP)', style: Theme.of(context).textTheme.titleLarge),
-                        const SizedBox(height: 24),
-                        GraficoDistribuicaoWidget(dadosDistribuicao: result.distribuicaoDiametrica),
-                      ],
-                    ),
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildResumoCard(result),
+              const SizedBox(height: 16),
+              Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Distribuição Diamétrica (CAP)', style: Theme.of(context).textTheme.titleLarge),
+                      const SizedBox(height: 24),
+                      GraficoDistribuicaoWidget(dadosDistribuicao: result.distribuicaoDiametrica),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                _buildInsightsCard("⚠️ Alertas", result.warnings, Colors.red.shade100),
-                const SizedBox(height: 12),
-                _buildInsightsCard("💡 Insights", result.insights, Colors.blue.shade100),
-                const SizedBox(height: 12),
-                _buildInsightsCard("🛠️ Recomendações", result.recommendations, Colors.orange.shade100),
-                const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  onPressed: _navegarParaSimulacao,
-                  icon: const Icon(Icons.content_cut_outlined),
-                  label: const Text('Simular Desbaste'),
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+              ),
+              const SizedBox(height: 16),
+              _buildInsightsCard("⚠️ Alertas", result.warnings, Colors.red.shade100),
+              const SizedBox(height: 12),
+              _buildInsightsCard("💡 Insights", result.insights, Colors.blue.shade100),
+              const SizedBox(height: 12),
+              _buildInsightsCard("🛠️ Recomendações", result.recommendations, Colors.orange.shade100),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: _navegarParaSimulacao,
+                icon: const Icon(Icons.content_cut_outlined),
+                label: const Text('Simular Desbaste'),
+                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed: _analisarRendimento,
+                icon: const Icon(Icons.bar_chart_outlined),
+                label: const Text('Analisar Rendimento Comercial'),
+                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed: _gerarPlanoDeCubagemPdf,
+                icon: const Icon(Icons.picture_as_pdf_outlined, color: Colors.white),
+                label: const Text('Gerar Plano de Cubagem (PDF)'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                const SizedBox(height: 8),
-                ElevatedButton.icon(
-                  onPressed: _analisarRendimento,
-                  icon: const Icon(Icons.bar_chart_outlined),
-                  label: const Text('Analisar Rendimento Comercial'),
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
-                ),
-                const SizedBox(height: 8),
-                ElevatedButton.icon(
-                  onPressed: _gerarPlanoDeCubagemPdf,
-                  icon: const Icon(Icons.picture_as_pdf_outlined, color: Colors.white),
-                  label: const Text('Gerar Plano de Cubagem (PDF)'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

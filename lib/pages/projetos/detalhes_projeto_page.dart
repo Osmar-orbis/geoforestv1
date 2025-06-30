@@ -5,10 +5,9 @@ import 'package:intl/intl.dart';
 import 'package:geoforestcoletor/data/datasources/local/database_helper.dart';
 import 'package:geoforestcoletor/models/projeto_model.dart';
 import 'package:geoforestcoletor/models/atividade_model.dart';
-
-// Imports para as páginas de navegação
 import 'package:geoforestcoletor/pages/atividades/form_atividade_page.dart';
 import 'package:geoforestcoletor/pages/atividades/detalhes_atividade_page.dart';
+import 'package:geoforestcoletor/pages/menu/home_page.dart'; // <<< 1. IMPORTA A HOMEPAGE
 
 class DetalhesProjetoPage extends StatefulWidget {
   final Projeto projeto;
@@ -22,6 +21,10 @@ class _DetalhesProjetoPageState extends State<DetalhesProjetoPage> {
   late Future<List<Atividade>> _atividadesFuture;
   final dbHelper = DatabaseHelper.instance;
 
+  // >>> 2. ESTADO PARA CONTROLAR O MODO DE SELEÇÃO <<<
+  bool _isSelectionMode = false;
+  final Set<int> _selectedAtividades = {};
+
   @override
   void initState() {
     super.initState();
@@ -29,40 +32,47 @@ class _DetalhesProjetoPageState extends State<DetalhesProjetoPage> {
   }
 
   void _carregarAtividades() {
-    setState(() {
-      _atividadesFuture = dbHelper.getAtividadesDoProjeto(widget.projeto.id!);
-    });
-  }
-
-  void _navegarParaNovaAtividade() async {
-    final bool? atividadeCriada = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => FormAtividadePage(projetoId: widget.projeto.id!),
-      ),
-    );
-    if (atividadeCriada == true && mounted) {
-      _carregarAtividades(); // Recarrega a lista para mostrar a nova atividade
+    if (mounted) {
+      setState(() {
+        _isSelectionMode = false;
+        _selectedAtividades.clear();
+        _atividadesFuture = dbHelper.getAtividadesDoProjeto(widget.projeto.id!);
+      });
     }
   }
 
-  void _navegarParaDetalhesAtividade(Atividade atividade) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => DetalhesAtividadePage(atividade: atividade)),
-    ).then((_) {
-      // Recarrega as atividades caso algo mude (ex: uma atividade foi editada)
-      _carregarAtividades();
+  // --- MÉTODOS DE SELEÇÃO E EXCLUSÃO ---
+  void _toggleSelectionMode(int? atividadeId) {
+    setState(() {
+      _isSelectionMode = !_isSelectionMode;
+      _selectedAtividades.clear();
+      if (_isSelectionMode && atividadeId != null) {
+        _selectedAtividades.add(atividadeId);
+      }
     });
   }
 
-  Future<void> _deletarAtividade(Atividade atividade) async {
+  void _onItemSelected(int atividadeId) {
+    setState(() {
+      if (_selectedAtividades.contains(atividadeId)) {
+        _selectedAtividades.remove(atividadeId);
+        if (_selectedAtividades.isEmpty) {
+          _isSelectionMode = false;
+        }
+      } else {
+        _selectedAtividades.add(atividadeId);
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedAtividades() async {
+    if (_selectedAtividades.isEmpty) return;
+
     final bool? confirmar = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar Exclusão'),
-        content: Text(
-            'Tem certeza que deseja apagar a atividade "${atividade.tipo}" e todos os seus dados (fazendas, talhões, etc)?'),
+        content: Text('Tem certeza que deseja apagar as ${_selectedAtividades.length} atividades selecionadas e todos os seus dados? Esta ação não pode ser desfeita.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
           FilledButton(
@@ -75,20 +85,75 @@ class _DetalhesProjetoPageState extends State<DetalhesProjetoPage> {
     );
 
     if (confirmar == true && mounted) {
-      await dbHelper.deleteAtividade(atividade.id!);
+      for (final id in _selectedAtividades) {
+        await dbHelper.deleteAtividade(id);
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Atividade "${atividade.tipo}" apagada.'),
+          content: Text('${_selectedAtividades.length} atividades apagadas.'),
           backgroundColor: Colors.green));
       _carregarAtividades();
     }
   }
 
+  // --- MÉTODOS DE NAVEGAÇÃO ---
+  void _navegarParaNovaAtividade() async {
+    final bool? atividadeCriada = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FormAtividadePage(projetoId: widget.projeto.id!),
+      ),
+    );
+    if (atividadeCriada == true && mounted) {
+      _carregarAtividades();
+    }
+  }
+
+  void _navegarParaDetalhesAtividade(Atividade atividade) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => DetalhesAtividadePage(atividade: atividade)),
+    ).then((_) => _carregarAtividades());
+  }
+
+  // --- WIDGETS DE CONSTRUÇÃO DA UI ---
+  AppBar _buildSelectionAppBar() {
+    return AppBar(
+      title: Text('${_selectedAtividades.length} selecionada(s)'),
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        onPressed: () => _toggleSelectionMode(null),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.delete_outline),
+          tooltip: 'Apagar selecionadas',
+          onPressed: _deleteSelectedAtividades,
+        ),
+      ],
+    );
+  }
+  
+  AppBar _buildNormalAppBar() {
+    return AppBar(
+      title: Text(widget.projeto.nome),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.home_outlined),
+          tooltip: 'Voltar para o Início',
+          onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const HomePage(title: 'Geo Forest Analytics')),
+            (Route<dynamic> route) => false,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.projeto.nome),
-      ),
+      appBar: _isSelectionMode ? _buildSelectionAppBar() : _buildNormalAppBar(),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -102,14 +167,11 @@ class _DetalhesProjetoPageState extends State<DetalhesProjetoPage> {
                 children: [
                    Text('Detalhes do Projeto', style: Theme.of(context).textTheme.titleLarge),
                     const Divider(height: 20),
-                  Text("Empresa: ${widget.projeto.empresa}",
-                      style: Theme.of(context).textTheme.bodyLarge),
+                  Text("Empresa: ${widget.projeto.empresa}", style: Theme.of(context).textTheme.bodyLarge),
                   const SizedBox(height: 8),
-                  Text("Responsável: ${widget.projeto.responsavel}",
-                      style: Theme.of(context).textTheme.bodyLarge),
+                  Text("Responsável: ${widget.projeto.responsavel}", style: Theme.of(context).textTheme.bodyLarge),
                   const SizedBox(height: 8),
-                   Text('Data de Criação: ${DateFormat('dd/MM/yyyy').format(widget.projeto.dataCriacao)}',
-                      style: Theme.of(context).textTheme.bodyLarge),
+                   Text('Data de Criação: ${DateFormat('dd/MM/yyyy').format(widget.projeto.dataCriacao)}', style: Theme.of(context).textTheme.bodyLarge),
                 ],
               ),
             ),
@@ -130,8 +192,7 @@ class _DetalhesProjetoPageState extends State<DetalhesProjetoPage> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  return Center(
-                      child: Text('Erro ao carregar atividades: ${snapshot.error}'));
+                  return Center(child: Text('Erro ao carregar atividades: ${snapshot.error}'));
                 }
 
                 final atividades = snapshot.data ?? [];
@@ -154,20 +215,37 @@ class _DetalhesProjetoPageState extends State<DetalhesProjetoPage> {
                   itemCount: atividades.length,
                   itemBuilder: (context, index) {
                     final atividade = atividades[index];
+                    final isSelected = _selectedAtividades.contains(atividade.id!);
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      color: isSelected ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5) : null,
                       child: ListTile(
+                        onTap: () {
+                          if (_isSelectionMode) {
+                            _onItemSelected(atividade.id!);
+                          } else {
+                            _navegarParaDetalhesAtividade(atividade);
+                          }
+                        },
+                        onLongPress: () {
+                          if (!_isSelectionMode) {
+                            _toggleSelectionMode(atividade.id!);
+                          }
+                        },
                         leading: CircleAvatar(
-                          child: Icon(_getIconForAtividade(atividade.tipo)),
+                          backgroundColor: isSelected ? Theme.of(context).colorScheme.primary : null,
+                          child: Icon(isSelected ? Icons.check : _getIconForAtividade(atividade.tipo)),
                         ),
-                        title: Text(atividade.tipo,
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                        title: Text(atividade.tipo, style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text(atividade.descricao.isNotEmpty ? atividade.descricao : 'Sem descrição'),
-                        trailing: IconButton(
+                        trailing: _isSelectionMode ? null : IconButton(
                           icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          onPressed: () => _deletarAtividade(atividade),
+                          onPressed: () async {
+                             _toggleSelectionMode(atividade.id!);
+                             await _deleteSelectedAtividades();
+                          },
                         ),
-                        onTap: () => _navegarParaDetalhesAtividade(atividade),
+                        selected: isSelected,
                       ),
                     );
                   },
@@ -177,7 +255,7 @@ class _DetalhesProjetoPageState extends State<DetalhesProjetoPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: _isSelectionMode ? null : FloatingActionButton.extended(
         onPressed: _navegarParaNovaAtividade,
         tooltip: 'Nova Atividade',
         icon: const Icon(Icons.add_task),
